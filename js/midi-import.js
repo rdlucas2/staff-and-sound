@@ -7,8 +7,44 @@ import { capQ, midiToKey } from './notation.js';
 export const MAX_IMPORT_PARTS = 8;
 export const MAX_IMPORT_BARS = 64;
 
-// Sixteenths -> [duration, dots], largest first.
-const PIECES = [[16, 'w', 0], [12, 'h', 1], [8, 'h', 0], [6, 'q', 1], [4, 'q', 0], [3, '8', 1], [2, '8', 0], [1, '16', 0]];
+// Written durations, in quarter notes, largest first.
+const PIECES_Q = [
+  [4, 'w', 0], [3, 'h', 1], [2, 'h', 0], [1.5, 'q', 1], [1, 'q', 0], [2 / 3, 'q', 0, true],
+  [0.75, '8', 1], [0.5, '8', 0], [1 / 3, '8', 0, true], [0.25, '16', 0], [1 / 6, '16', 0, true],
+];
+
+/** Pieces usable on a grid of `unitsPerQ` units per quarter, every length a multiple of `grid` units. */
+function piecesFor(unitsPerQ, grid) {
+  return PIECES_Q.map(([q, dur, dots, trip]) => ({ len: q * unitsPerQ, dur, dots, trip: !!trip }))
+    .filter((p) => Math.abs(p.len - Math.round(p.len)) < 1e-9 && Math.round(p.len) % grid === 0)
+    .map((p) => ({ ...p, len: Math.round(p.len) }));
+}
+
+/**
+ * Split a length into written durations starting at `pos`: triplets only on triplet positions and
+ * within one beat, straight values only on sixteenth positions. Returns null if impossible.
+ */
+function decompose(pos, len, pieces, unitsPerQ) {
+  const tripStep = unitsPerQ / 3, straightStep = unitsPerQ / 4;
+  const fits = (pc, p) => pc.trip
+    ? Number.isInteger(tripStep) && p % Math.min(pc.len, tripStep) === 0 && Math.floor(p / unitsPerQ) === Math.floor((p + pc.len - 1) / unitsPerQ)
+    : !Number.isInteger(straightStep) || p % straightStep === 0;
+  const memo = new Map();
+  const go = (p, l) => {
+    if (l === 0) return [];
+    const key = p + ':' + l;
+    if (memo.has(key)) return memo.get(key);
+    let found = null;
+    for (const pc of pieces) {
+      if (pc.len > l || !fits(pc, p)) continue;
+      const rest = go(p + pc.len, l - pc.len);
+      if (rest) { found = [pc, ...rest]; break; }
+    }
+    memo.set(key, found);
+    return found;
+  };
+  return go(pos, len);
+}
 const SUPPORTED_DENOMS = new Set([2, 4, 8]);
 
 /** Pick one of our sounds from a General MIDI program number. */
@@ -32,11 +68,13 @@ function spellingFor(header) {
 }
 
 /**
- * Turn a list of {start, end, midi, spell?, key?} (in sixteenths) into notes, splitting at bar lines.
- * key ({ letter, acc, oct }) fixes a note's spelling exactly; spell picks sharps or flats.
- * barLen is in sixteenths; maxLen cuts the part off; spell ('#' or 'b') is the default spelling.
+ * Turn a list of {start, end, midi, spell?, key?, vel?} into notes, splitting at bar lines with ties.
+ * Times are in units of 1/unitsPerQ of a quarter note (default 4 = sixteenths); barLen and maxLen too.
+ * grid: the smallest step in units (lengths are multiples of it); use unitsPerQ 12 for triplet grids.
+ * key ({ letter, acc, oct }) fixes a note's spelling exactly; spell ('#' or 'b') is the default spelling.
  */
-export function notesFromRaw(raw, barLen, maxLen, spell = '#') {
+export function notesFromRaw(raw, barLen, maxLen, spell = '#', { unitsPerQ = 4, grid = 1 } = {}) {
+  const pieces = piecesFor(unitsPerQ, grid);
   const spellOf = new Map();
   const keyOf = new Map(); // explicit spellings, per note and onset
   // Group by onset into chords.
@@ -56,12 +94,14 @@ export function notesFromRaw(raw, barLen, maxLen, spell = '#') {
     const next = k + 1 < starts.length ? starts[k + 1] : Infinity;
     let end = Math.min(Math.max(...group.map((n) => n.end)), next, maxLen);
     // Close small gaps from early releases so a slightly short note doesn't leave a tiny rest.
-    const gapTo = Number.isFinite(next) ? Math.min(next, maxLen) : Math.ceil(end / 4) * 4;
-    if (gapTo > end && gapTo - end <= Math.max(1, Math.floor((end - s) * 0.25))) end = gapTo;
+    const gapTo = Number.isFinite(next) ? Math.min(next, maxLen) : Math.ceil(end / unitsPerQ) * unitsPerQ;
+    if (gapTo > end && gapTo - end <= Math.max(grid, Math.floor((end - s) * 0.25))) end = gapTo;
     if (s > cursor) segs.push({ start: cursor, len: s - cursor, midis: null });
     const midis = [...new Set(group.map((n) => n.midi))].sort((a, b) => a - b);
-    segs.push({ start: s, len: Math.max(1, end - s), midis });
-    cursor = s + Math.max(1, end - s);
+    const vels = group.map((n) => n.vel).filter((v) => v !== undefined);
+    const len = Math.max(grid, end - s);
+    segs.push({ start: s, len, midis, vel: vels.length ? vels.reduce((a, b) => a + b, 0) / vels.length : undefined });
+    cursor = s + len;
   });
 
   const notes = [];
@@ -69,14 +109,19 @@ export function notesFromRaw(raw, barLen, maxLen, spell = '#') {
     let pos = seg.start, left = seg.len;
     while (left > 0) {
       const room = barLen - (pos % barLen);
-      let chunk = Math.min(left, room);
-      while (chunk > 0) {
-        const [len, dur, dots] = PIECES.find(([l]) => l <= chunk);
+      const chunk = Math.min(left, room);
+      const parts = decompose(pos % barLen, chunk, pieces, unitsPerQ)
+        || decompose(pos % barLen, chunk, piecesFor(unitsPerQ, 1), unitsPerQ)
+        || [];
+      if (!parts.length) { left -= chunk; pos += chunk; continue; } // can't be written; skip it
+      for (const pc of parts) {
         const note = seg.midis
-          ? { keys: seg.midis.map((m) => keyOf.get(m + '@' + seg.start) || midiToKey(m, spellOf.get(m) || spell)), dur, dots, rest: false }
-          : { keys: [], dur, dots, rest: true };
+          ? { keys: seg.midis.map((m) => keyOf.get(m + '@' + seg.start) || midiToKey(m, spellOf.get(m) || spell)), dur: pc.dur, dots: pc.dots, rest: false }
+          : { keys: [], dur: pc.dur, dots: pc.dots, rest: true };
+        if (pc.trip) note.trip = true;
+        if (seg.midis && seg.vel !== undefined) note.vel = seg.vel;
         notes.push(note);
-        chunk -= len; left -= len; pos += len;
+        left -= pc.len; pos += pc.len;
         if (seg.midis && left > 0) note.tie = true;
       }
     }

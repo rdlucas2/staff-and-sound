@@ -139,8 +139,21 @@ export function renderScore(el, parts, { ts, active = 0, chart = null, minBars =
           placed[pi][i] = { sn, line: li };
           return sn;
         });
+        // Triplets: group runs of triplet notes into whole beats and wrap each group in a Tuplet
+        // (must happen before the notes go into a Voice, since it changes their ticks).
+        const tuplets = [];
+        let run = [], runQ = 0;
+        const closeRun = () => { if (run.length) tuplets.push(new VF.Tuplet(run, { numNotes: 3, notesOccupied: 2 })); run = []; runQ = 0; };
+        idxs.forEach((i, k) => {
+          const n = p.notes[i];
+          if (!n.trip) { closeRun(); return; }
+          run.push(sns[k]);
+          runQ += durQ(n);
+          if (Math.abs(runQ - Math.round(runQ)) < 1e-6 && runQ > 0.5) closeRun();
+        });
+        closeRun();
         const q = idxs.reduce((s, i) => s + durQ(p.notes[i]), 0);
-        return { sns, q };
+        return { sns, q, tuplets };
       });
       const maxQ = Math.max(...built.map((b) => b.q));
       const voices = [];
@@ -153,7 +166,7 @@ export function renderScore(el, parts, { ts, active = 0, chart = null, minBars =
         if (!tickables.length) return;
         const voice = new VF.Voice({ numBeats: num, beatValue: den }).setMode(VF.Voice.Mode.SOFT).addTickables(tickables);
         if (b.sns.length) VF.Accidental.applyAccidentals([voice], 'C');
-        voices.push({ voice, stave: staves[pi], sns: b.sns });
+        voices.push({ voice, stave: staves[pi], sns: b.sns, tuplets: b.tuplets });
       });
       if (voices.length) {
         const fmt = new VF.Formatter();
@@ -164,6 +177,7 @@ export function renderScore(el, parts, { ts, active = 0, chart = null, minBars =
           const beams = v.sns.length ? VF.Beam.generateBeams(v.sns, { groups: beamGroups }) : [];
           v.voice.draw(ctx, v.stave);
           beams.forEach((bm) => bm.setContext(ctx).draw());
+          v.tuplets.forEach((t) => t.setContext(ctx).draw());
           drawn.push(...v.sns);
         });
       }

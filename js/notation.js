@@ -1,16 +1,21 @@
 // Note model, text notation parser/serializer, and measure layout helpers.
-// A note is { keys: [{ letter, acc, oct }], dur: 'w'|'h'|'q'|'8'|'16'|'32', dots: 0|1|2, rest: bool, tie?: bool }.
-// tie = tied to the next note (same pitches sound continuously).
+// A note is { keys: [{ letter, acc, oct }], dur: 'w'|'h'|'q'|'8'|'16'|'32', dots: 0|1|2, rest: bool,
+//              tie?: bool, trip?: bool, vel?: number }
+// tie  = tied to the next note (same pitches sound continuously)
+// trip = triplet: lasts 2/3 of its written value (three in the time of two)
+// vel  = velocity 0–1 (loudness); absent means the default
 
 export const DUR_Q = { w: 4, h: 2, q: 1, '8': 0.5, '16': 0.25, '32': 0.125 };
 const PC = { c: 0, d: 2, e: 4, f: 5, g: 7, a: 9, b: 11 };
 const ACC = { '': 0, n: 0, '#': 1, '##': 2, b: -1, bb: -2 };
 
-/** Length of a note in quarter notes, including dots. */
+const EPS = 1e-6;
+
+/** Length of a note in quarter notes, including dots and triplets. */
 export function durQ(n) {
   let t = DUR_Q[n.dur], add = t;
   for (let i = 0; i < n.dots; i++) { add /= 2; t += add; }
-  return t;
+  return n.trip ? (t * 2) / 3 : t;
 }
 
 export const midiOf = (k) => 12 * (k.oct + 1) + PC[k.letter] + ACC[k.acc];
@@ -38,24 +43,35 @@ function parsePitch(s) {
 }
 
 /**
- * Parse text like "C#4/q D4 (C4 E4 G4)/h. r/8 | C4/h~ C4/q".
- * Duration carries over from the previous token when omitted; "|" is optional; "~" ties to the next note.
+ * Parse text like "C#4/q D4 (C4 E4 G4)/h. r/8 | C4/h~ C4/q | E4/8t F4 G4 | A4/q:100".
+ * Duration carries over from the previous token when omitted; "|" is optional; "~" ties to the next note;
+ * "t" after the duration makes it a triplet; ":0–127" sets the note's velocity.
  * Returns { notes } or { error: offendingToken }.
  */
 export function parse(text) {
   const tokens = text.match(/\([^)]*\)\S*|[^\s|]+/g) || [];
   const notes = [];
-  let lastDur = 'q';
+  let lastDur = 'q', lastTrip = false;
   for (const tok of tokens) {
-    const m = /^(\([^)]*\)|[^/~]+)(?:\/(w|h|q|8|16|32)(\.{0,2}))?(~)?$/.exec(tok);
+    const m = /^(\([^)]*\)|[^/~:]+)(?:\/(w|h|q|8|16|32)(t?)(\.{0,2}))?(~)?(?::(\d{1,3}))?$/.exec(tok);
     if (!m) return { error: tok };
-    const head = m[1], dur = m[2] || lastDur, dots = (m[3] || '').length, tie = !!m[4];
+    const head = m[1], hasDur = !!m[2];
+    const dur = m[2] || lastDur, trip = hasDur ? !!m[3] : lastTrip, dots = (m[4] || '').length, tie = !!m[5];
+    if (trip && dots) return { error: tok };
     lastDur = dur;
-    if (/^r$/i.test(head)) { notes.push({ keys: [], dur, dots, rest: true }); continue; }
-    const parts = head.startsWith('(') ? head.slice(1, -1).trim().split(/\s+/) : [head];
-    const keys = parts.map(parsePitch);
-    if (!keys.length || keys.some((k) => !k)) return { error: tok };
-    notes.push(tie ? { keys, dur, dots, rest: false, tie } : { keys, dur, dots, rest: false });
+    lastTrip = trip;
+    const note = { keys: [], dur, dots, rest: true };
+    if (!/^r$/i.test(head)) {
+      const parts = head.startsWith('(') ? head.slice(1, -1).trim().split(/\s+/) : [head];
+      const keys = parts.map(parsePitch);
+      if (!keys.length || keys.some((k) => !k)) return { error: tok };
+      note.keys = keys;
+      note.rest = false;
+      if (tie) note.tie = true;
+      if (m[6] !== undefined) note.vel = Math.min(127, +m[6]) / 127;
+    }
+    if (trip) note.trip = true;
+    notes.push(note);
   }
   return { notes };
 }
@@ -67,13 +83,15 @@ export function serialize(notes, ts) {
   let used = 0, last = null;
   for (const n of notes) {
     const d = durQ(n);
-    if (used > 0 && used + d > cap + 1e-9) { bits.push('|'); used = 0; }
+    if (used > 0 && used + d > cap + EPS) { bits.push('|'); used = 0; }
     const head = n.rest ? 'r' : n.keys.length > 1 ? '(' + n.keys.map(pitchStr).join(' ') + ')' : pitchStr(n.keys[0]);
-    const durPart = n.dur !== last || n.dots ? '/' + n.dur + '.'.repeat(n.dots) : '';
-    last = n.dots ? null : n.dur;
-    bits.push(head + durPart + (n.tie && !n.rest ? '~' : ''));
+    const durName = n.dur + (n.trip ? 't' : '');
+    const durPart = durName !== last || n.dots ? '/' + durName + '.'.repeat(n.dots) : '';
+    last = n.dots ? null : durName;
+    const vel = !n.rest && n.vel !== undefined ? ':' + Math.round(n.vel * 127) : '';
+    bits.push(head + durPart + (n.tie && !n.rest ? '~' : '') + vel);
     used += d;
-    if (used >= cap - 1e-9) { bits.push('|'); used = 0; }
+    if (used >= cap - EPS) { bits.push('|'); used = 0; }
   }
   if (bits[bits.length - 1] === '|') bits.pop();
   let bars = 0, s = '';
@@ -90,9 +108,9 @@ export function toMeasures(notes, ts) {
   let cur = [], used = 0;
   notes.forEach((n, i) => {
     const d = durQ(n);
-    if (used > 0 && used + d > cap + 1e-9) { out.push(cur); cur = []; used = 0; }
+    if (used > 0 && used + d > cap + EPS) { out.push(cur); cur = []; used = 0; }
     cur.push(i); used += d;
-    if (used >= cap - 1e-9) { out.push(cur); cur = []; used = 0; }
+    if (used >= cap - EPS) { out.push(cur); cur = []; used = 0; }
   });
   if (cur.length) out.push(cur);
   return out;
@@ -136,6 +154,7 @@ export function toEvents(notes, bpm, { swing = 0.5 } = {}) {
       ev.cont = true;
     } else {
       ev.midis = n.rest ? [] : n.keys.map(midiOf);
+      if (n.vel !== undefined) ev.vel = n.vel;
       head = n.rest ? null : ev;
     }
     events.push(ev);

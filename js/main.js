@@ -1,5 +1,6 @@
 // UI wiring: parts, chords and band, editing, on-screen piano, computer keyboard, MIDI keyboard, playback.
-import { parse, serialize, midiOf, pitchStr, midiToKey, toEvents, capQ } from './notation.js';
+import { parse, serialize, midiOf, pitchStr, midiToKey, toEvents, capQ, durQ } from './notation.js';
+import { quantize, defaultQuantize, GRIDS, SWINGS, SHORTEST, UNITS_PER_Q } from './quantize.js';
 import { renderScore } from './score.js';
 import * as audio from './audio.js';
 import { buildMidiFile, saveMidi, connectMidiInput } from './midi.js';
@@ -146,6 +147,8 @@ function syncText() {
   setMsg('');
   $('textPart').textContent = part().name;
   $('textPart').style.setProperty('--pc', part().color);
+  $('recFor').textContent = part().name;
+  $('recFor').style.setProperty('--pc', part().color);
 }
 
 function commit({ keepText = false } = {}) {
@@ -645,7 +648,16 @@ function buildPiano() {
 }
 function bindKey(el, k) {
   keyElsByMidi.set(midiOf(k), el);
-  el.addEventListener('pointerdown', (e) => { e.preventDefault(); previewKey(k); addPitch({ ...k }); });
+  el.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    if (rec.on) { recDown('p:' + midiOf(k), midiOf(k), 0.75); return; }
+    previewKey(k);
+    addPitch({ ...k });
+  });
+  const up = () => { if (rec.on) recUp('p:' + midiOf(k)); };
+  el.addEventListener('pointerup', up);
+  el.addEventListener('pointerleave', up);
+  el.addEventListener('pointercancel', up);
 }
 function flashKey(m, on) { keyElsByMidi.get(m)?.classList.toggle('down', on); }
 
@@ -844,6 +856,202 @@ document.addEventListener('drop', (e) => {
   loadFile(e.dataTransfer.files[0]);
 });
 
+// ---------- record a performance ----------
+const rec = {
+  on: false, zero: 0, partId: null, open: new Map(), notes: [], sustain: false, sustained: new Set(),
+  take: null, ticker: 0, previewTimer: 0,
+};
+const REST_PIECES = [[4, 'w', 0], [3, 'h', 1], [2, 'h', 0], [1.5, 'q', 1], [1, 'q', 0], [2 / 3, 'q', 0, true], [0.75, '8', 1], [0.5, '8', 0], [1 / 3, '8', 0, true], [0.25, '16', 0], [1 / 6, '16', 0, true]];
+
+/** Rests that fill the rest of the current bar after these notes. */
+function restsToBar(notes) {
+  const barQ = capQ(state.ts);
+  const total = notes.reduce((s, n) => s + durQ(n), 0);
+  let left = (barQ - (total % barQ)) % barQ;
+  const out = [];
+  for (const [q, dur, dots, trip] of REST_PIECES) {
+    while (left >= q - 1e-6) { out.push(trip ? { keys: [], dur, dots, rest: true, trip: true } : { keys: [], dur, dots, rest: true }); left -= q; }
+  }
+  return out;
+}
+
+function quantOptions() {
+  return {
+    grid: $('qGrid').value, swing: $('qSwing').value, shortest: $('qShortest').value, legato: $('qLegato').checked,
+    chordMs: +$('qChord').value, ignoreMs: +$('qIgnore').value, keepVel: $('qVel').checked,
+  };
+}
+$('qGrid').innerHTML = Object.entries(GRIDS).map(([k, g]) => `<option value="${k}">${g.label}</option>`).join('');
+$('qSwing').innerHTML = Object.entries(SWINGS).map(([k, g]) => `<option value="${k}">${g.label}</option>`).join('');
+$('qShortest').innerHTML = Object.entries(SHORTEST).map(([k, g]) => `<option value="${k}">${g.label}</option>`).join('');
+$('qGrid').value = defaultQuantize().grid;
+$('qShortest').value = defaultQuantize().shortest; // numeric-looking keys sort first, so set it explicitly
+
+function setRecStatus(text, tone) { $('recStatus').textContent = text; $('recStatus').dataset.tone = tone || ''; }
+
+/** Write the take (or the live recording) into its part with the current quantize settings. */
+function previewTake() {
+  const take = rec.take || (rec.on ? { raw: rec.notes, base: rec.base, partId: rec.partId, bpm: rec.bpm } : null);
+  if (!take) return;
+  const p = state.parts.find((x) => x.id === take.partId);
+  if (!p) return;
+  const opts = quantOptions();
+  const q = quantize(take.raw, { ...opts, bpm: take.bpm, ts: state.ts });
+  const barUnits = Math.round(capQ(state.ts) * UNITS_PER_Q);
+  const notes = notesFromRaw(q.notes, barUnits, barUnits * 64, $('spell').value, { unitsPerQ: UNITS_PER_Q, grid: q.gridUnits });
+  p.notes = [...take.base, ...notes];
+  if (p === part()) syncText();
+  render();
+  const swing = (opts.grid === '8' || opts.grid === '16') && opts.swing !== 'straight' ? `, ${SWINGS[opts.swing].label.toLowerCase()} feel` : '';
+  const dropped = q.dropped ? ` ${q.dropped} very short or early note${q.dropped === 1 ? '' : 's'} left out.` : '';
+  $('qSummary').textContent = `${q.notes.length} note${q.notes.length === 1 ? '' : 's'} over ${q.bars} bar${q.bars === 1 ? '' : 's'}, quantized to ${GRIDS[opts.grid].label}${swing}.${dropped}`;
+}
+const schedulePreview = () => { clearTimeout(rec.previewTimer); rec.previewTimer = setTimeout(previewTake, 120); };
+
+function recDown(src, m, vel) {
+  if (rec.open.has(src)) recClose(src);
+  rec.sustained.delete(src);
+  rec.open.set(src, { midi: m, t0: audio.heardNow() - rec.zero, vel });
+  audio.noteOn(part(), m, vel);
+  flashKey(m, true);
+}
+function recUp(src) {
+  const o = rec.open.get(src);
+  if (!o) return;
+  flashKey(o.midi, false);
+  if (rec.sustain) { rec.sustained.add(src); return; }
+  recClose(src);
+}
+function recClose(src) {
+  const o = rec.open.get(src);
+  if (!o) return;
+  rec.notes.push({ midi: o.midi, t0: o.t0, t1: audio.heardNow() - rec.zero, vel: o.vel });
+  rec.open.delete(src);
+  rec.sustained.delete(src);
+  audio.noteOff(part(), o.midi);
+  schedulePreview();
+}
+function recSustain(on) {
+  rec.sustain = on;
+  if (!on) for (const src of [...rec.sustained]) recClose(src);
+}
+
+function setRecUI(mode) {
+  const b = $('recBtn');
+  b.classList.toggle('on', mode === 'rec');
+  b.classList.toggle('counting', mode === 'count');
+  $('recLabel').textContent = mode ? 'Stop' : 'Record';
+  setPlayUI(!!mode);
+}
+
+async function startRecording() {
+  if (state.playing) stopPlayback();
+  if (rec.take) keepTake(true);
+  await audio.unlock();
+  setUndo();
+  const p = part();
+  const bpm = +$('tempo').value;
+  const [num, den] = state.ts.split('/').map(Number);
+  const barQ = capQ(state.ts), spq = 60 / bpm, beatSec = (4 / den) * spq;
+  const append = $('recMode').value === 'append';
+  const base = append ? [...p.notes, ...restsToBar(p.notes)] : [];
+  const startQ = base.reduce((s, n) => s + durQ(n), 0);
+  const countBeats = +$('recCount').value * num, countSec = countBeats * beatSec;
+
+  // Accompaniment: other parts and/or the band from the recording's first bar, after the count-in.
+  const others = $('recAlongParts').checked ? state.parts.filter((x) => x !== p) : [];
+  const bandAlong = $('recAlongBand').checked && state.band.on && hasChords(state.band);
+  const plan = buildPlan({ parts: others, band: bandAlong ? state.band : { ...state.band, on: false }, ts: state.ts, bpm, fromQ: startQ, ending: false });
+  const shift = (list) => list.map((e) => ({ ...e, t: e.t + countSec }));
+  const tracks = plan.tracks.map((t) => ({ ...t, hl: undefined, events: shift(t.events) }));
+  const maxBars = 64;
+  const clicks = [];
+  const clickOn = $('recClick').checked;
+  for (let k = 0; k < countBeats + maxBars * num; k++) {
+    if (k >= countBeats && !clickOn) break;
+    clicks.push({ t: k * beatSec, drum: k % num === 0 ? 'clickHi' : 'click', vel: k % num === 0 ? 0.9 : 0.65 });
+  }
+  tracks.push({ key: 'click', name: 'Click', part: { id: 'rec-click', sound: 'drums', volume: +$('recClickVol').value, mute: false, solo: false }, events: clicks });
+
+  Object.assign(rec, { on: true, partId: p.id, base, prevNotes: [...p.notes], startQ, bpm, notes: [], sustain: false });
+  rec.open.clear();
+  rec.sustained.clear();
+  $('recQuant').hidden = false;
+  if (!rec.swingSet) {
+    $('qSwing').value = bandAlong && STYLES[state.band.style].swing > 0.5 ? 'medium' : 'straight';
+  }
+  const at = audio.play(tracks, {
+    total: countSec + maxBars * barQ * spq + 1,
+    marks: plan.marks.map((m) => ({ ...m, t: m.t + countSec })),
+    onMark: lightChord,
+    onEnd: () => stopRecording(),
+  });
+  rec.zero = at + countSec;
+  state.playing = true;
+  setRecUI(countBeats ? 'count' : 'rec');
+  clearInterval(rec.ticker);
+  rec.ticker = setInterval(() => {
+    const t = audio.heardNow() - rec.zero;
+    if (t < 0) {
+      setRecStatus(`Count-in… ${Math.ceil(-t / beatSec)}`, 'live');
+      setRecUI('count');
+    } else {
+      const bar = Math.floor(t / (barQ * spq)) + 1 + Math.round(startQ / barQ);
+      setRecStatus(`Recording into ${p.name}: bar ${bar}, ${rec.notes.length + rec.open.size} notes. Space or Stop to finish.`, 'live');
+      setRecUI('rec');
+    }
+  }, 100);
+  $('recBtn').blur();
+}
+
+function stopRecording() {
+  if (!rec.on) return;
+  for (const src of [...rec.open.keys()]) recClose(src);
+  rec.on = false;
+  clearInterval(rec.ticker);
+  clearTimeout(rec.previewTimer);
+  audio.stop();
+  lightChord(null);
+  state.playing = false;
+  setRecUI(null);
+  const p = state.parts.find((x) => x.id === rec.partId);
+  if (!rec.notes.length) {
+    if (p) p.notes = rec.prevNotes;
+    $('recQuant').hidden = true;
+    render();
+    setRecStatus('Nothing was recorded. Press Record and play after the count-in.');
+    return;
+  }
+  rec.take = { raw: rec.notes, base: rec.base, prevNotes: rec.prevNotes, partId: rec.partId, bpm: rec.bpm };
+  previewTake();
+  setRecStatus('Adjust the quantize settings and watch the staff update, then keep the take or discard it.');
+}
+
+function keepTake(silent) {
+  if (!rec.take) return;
+  previewTake();
+  rec.take = null;
+  $('recQuant').hidden = true;
+  commit();
+  if (!silent) setRecStatus('Kept. Undo (at the top) goes back to before the recording.');
+}
+function discardTake() {
+  if (!rec.take) return;
+  const p = state.parts.find((x) => x.id === rec.take.partId);
+  if (p) p.notes = rec.take.prevNotes;
+  rec.take = null;
+  $('recQuant').hidden = true;
+  commit();
+  setRecStatus('Take discarded.');
+}
+
+$('recBtn').addEventListener('click', () => (rec.on ? stopRecording() : startRecording()));
+$('qApply').addEventListener('click', () => keepTake(false));
+$('qDiscard').addEventListener('click', discardTake);
+for (const id of ['qGrid', 'qSwing', 'qShortest', 'qLegato', 'qVel']) $(id).addEventListener('change', () => { if (id === 'qSwing') rec.swingSet = true; previewTake(); });
+$('qChord').addEventListener('input', (e) => { $('qChordVal').textContent = `${e.target.value} ms`; previewTake(); });
+$('qIgnore').addEventListener('input', (e) => { $('qIgnoreVal').textContent = `${e.target.value} ms`; previewTake(); });
+
 // ---------- MIDI ----------
 async function exportMidi() {
   if (!state.parts.some((p) => p.notes.length) && !(state.band.on && hasChords(state.band))) { setStatus('exportStatus', 'Add some notes or chords first.', 'warn'); return; }
@@ -863,11 +1071,17 @@ async function connectMidi() {
   try {
     await connectMidiInput({
       onNoteOn: async (m, vel) => {
+        if (rec.on) { recDown('m:' + m, m, Math.max(0.15, vel)); return; }
         flashKey(m, true);
         if (!state.playing) { await audio.unlock(); audio.noteOn(part(), m, Math.max(0.2, vel)); }
         addPitch(midiToKey(m, $('spell').value), { groupWindowMs: 70 });
       },
-      onNoteOff: (m) => { flashKey(m, false); audio.noteOff(part(), m); },
+      onNoteOff: (m) => {
+        if (rec.on || rec.open.has('m:' + m)) { recUp('m:' + m); return; }
+        flashKey(m, false);
+        audio.noteOff(part(), m);
+      },
+      onControl: (cc, v) => { if (cc === 64) recSustain(v >= 0.5); },
       onDevices: (names) => setStatus('midiStatus',
         names.length ? `Listening: ${names.join(', ')}` : 'MIDI allowed. Plug in a keyboard.', names.length ? 'ok' : ''),
     });
@@ -893,7 +1107,11 @@ $('tempo').addEventListener('input', (e) => { $('tempoVal').textContent = e.targ
 $('tempo').addEventListener('change', saveDraft);
 $('master').addEventListener('input', (e) => { $('masterVal').textContent = e.target.value; audio.setMasterVolume(+e.target.value); });
 $('master').addEventListener('change', saveDraft);
-$('playBtn').addEventListener('click', togglePlay);
+$('playBtn').addEventListener('click', () => (rec.on ? stopRecording() : togglePlay()));
+document.addEventListener('keyup', (e) => {
+  const key = e.key.toLowerCase();
+  if (rec.open.has('c:' + key)) recUp('c:' + key);
+});
 $('exportBtn').addEventListener('click', exportMidi);
 $('midiBtn').addEventListener('click', connectMidi);
 
@@ -916,6 +1134,11 @@ const DUR_KEYS = { '1': 'w', '2': 'h', '3': 'q', '4': '8', '5': '16' };
 document.addEventListener('keydown', (e) => {
   if (e.target.matches('textarea, input, select') || e.metaKey || e.ctrlKey || e.altKey) return;
   const key = e.key.toLowerCase();
+  if (keyMap[key] && rec.on) {
+    e.preventDefault();
+    if (!e.repeat) recDown('c:' + key, midiOf(keyMap[key].k), 0.75);
+    return;
+  }
   if (keyMap[key]) {
     e.preventDefault();
     if (e.repeat) return;
@@ -940,7 +1163,7 @@ document.addEventListener('keydown', (e) => {
     case 'arrowright': e.preventDefault(); if (state.selected >= 0) select(Math.min(part().notes.length - 1, state.selected + 1)); break;
     case 'arrowup': e.preventDefault(); if (state.active > 0) setActive(state.active - 1); break;
     case 'arrowdown': e.preventDefault(); if (state.active < state.parts.length - 1) setActive(state.active + 1); break;
-    case ' ': e.preventDefault(); togglePlay(); break;
+    case ' ': e.preventDefault(); if (rec.on) stopRecording(); else togglePlay(); break;
   }
 });
 

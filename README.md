@@ -9,6 +9,7 @@ Write music on a staff and hear it played back, in the browser, with no build st
 - **Synth:** any part can use an editable synth, with two oscillators (unison spread, pulse width), amp and filter envelopes, resonant filter, vibrato and tremolo, mono with glide, chorus, delay and reverb. Comes with presets such as Synth Brass, Strings, Square Lead, Glass Bell, Synth Bass, Warm Pad, 8-bit Lead and Wah Clav.
 - **Sampler:** record a sound with the microphone (or load an audio file) and play it across the keyboard, Casio SK-1 style, with auto-trim, root note, loop, reverse, attack and release.
 - **Freeplay:** `play.html` is just the instrument: a big multi-touch keyboard, computer-keyboard and MIDI input with velocity and sustain pedal, octave and transpose, drum pads and the synth editor.
+- **Record:** play freely (MIDI keyboard, computer keys or on-screen keys) with a click and count-in, optionally over your other parts and the band, and the take is written as notation. Adjust quantize (straight or triplet grids, swing feel, shortest note, legato, chord window) and watch the staff update before keeping it.
 - **Input:** on-screen piano, computer keyboard, a MIDI keyboard (Web MIDI API), or a text notation.
 - **Import:** open any `.mid` file (picker or drag-and-drop) or one of the bundled examples. Each track becomes a part; rhythms snap to sixteenths, notes crossing a bar line are tied, and two-hand piano tracks split onto two staves. Undo restores what you had.
 - **Export:** saves a Standard MIDI File (`.mid`) via [@tonejs/midi](https://github.com/Tonejs/Midi): one track per part, the band's comping and bass, and drums on General MIDI channel 10.
@@ -90,6 +91,28 @@ Choose **Sampler (your sound)** for a part (then **Edit sample**), or use the Sa
 
 There's one shared sample, kept in your browser's IndexedDB so it survives reloads. Until you record one, a built-in kalimba sound is used. The microphone needs HTTPS or localhost and isn't available inside some embedded viewers (including the claude.ai artifact viewer); loading a file works everywhere. MIDI export can't carry the sample, so sampler parts export as General MIDI program 54 (Synth Voice).
 
+## Recording a performance
+
+In **Record a performance** (under the keyboard):
+
+1. Choose **Replace the part** or **Add after the end**, a count-in (none, 1 or 2 bars), the click and its volume, and whether your other parts and the band play along.
+2. Press **Record** and play after the count-in, on a MIDI keyboard (velocity and sustain pedal work), your computer keys or the on-screen keys. Notes appear on the staff as you play. **Space** or **Stop** ends the take.
+3. Shape the transcription while you watch the staff:
+
+| Setting | What it does |
+| --- | --- |
+| Quantize to | grid: 1/4, 1/8, 1/16, 1/8 triplet or 1/16 triplet |
+| Feel | for 1/8 and 1/16: read swung off-beats as straight eighths, as notation does |
+| Shortest note | written notes are at least this long |
+| Legato | stretch notes to the next note, closing small gaps |
+| Chord window | notes struck this close together become one chord |
+| Ignore shorter than | drop accidental taps |
+| Keep velocities | store how hard each note was played |
+
+4. **Keep it** saves the result; **Discard take** puts the part back. Undo also goes back to before the recording.
+
+Timing uses the audio clock and subtracts the browser's reported output latency, so play along to what you hear. Tempo and time signature come from the score. Each part is still one line of notes or chords, so a note held under a moving melody is shortened when the next note starts.
+
 ## Starting over
 
 **New** clears everything: one empty piano part, no chords, 4/4 at 108 bpm, band settings back to their defaults. **Load demo** brings back the opening Ode to Joy demo. Both can be undone with **Undo** in the status line. Your master volume is kept.
@@ -103,6 +126,8 @@ There's one shared sample, kept in your browser's IndexedDB so it survives reloa
 | `(C4 E4 G4)/h` | C major chord, half note |
 | `r/16` | sixteenth rest |
 | `C4/h~ C4/q` | tie: one C sounding for three beats |
+| `E4/8t F4 G4` | eighth-note triplet (`t` after the duration) |
+| `A4/q:100` | velocity 0–127 after a colon (recordings keep how hard you played) |
 | `D4 E4 F4` | duration carries over from the previous note |
 | `\|` | optional bar line (bars are computed from the time signature) |
 
@@ -145,7 +170,8 @@ js/chords.js        chord symbol parser, chart parsing, chord-degree spelling
 js/band.js          backing band: styles, voicings, walking/pattern bass, drum patterns
 js/plan.js          merges parts and band into timed tracks for playback and export
 js/midi.js          MIDI file export and Web MIDI input
-js/midi-import.js   MIDI file -> parts (quantizing, chords, bar splitting with ties)
+js/midi-import.js   MIDI file -> parts; notesFromRaw writes timed notes as notation (straight and triplet grids, ties)
+js/quantize.js      quantizing recorded performances (grids, swing, chord grouping, legato)
 js/zip.js           tiny store-only zip writer (used when .mid downloads are not allowed)
 samples/salamander  piano samples (CC BY 3.0, see README.txt there)
 demos/              example MIDI files (public-domain pieces)

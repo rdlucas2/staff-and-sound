@@ -359,3 +359,22 @@ body.dropping .drop-overlay { display: flex; }
 .smp-buttons .ghost { padding: 5px 12px; font-size: 13px; }
 .smp-help { margin: 0; font-size: 12px; color: var(--muted); }
 .smp-name { width: 100%; font: 500 14px var(--f-body); color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; }
+
+/* record a performance */
+.rec-section { display: flex; flex-direction: column; gap: 10px; }
+.rec-body { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
+.rec-controls, .rec-qrow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
+.rec-btn {
+  display: inline-flex; align-items: center; gap: 8px; font: 600 15px var(--f-body); color: var(--ink);
+  background: var(--bg); border: 1px solid var(--line); border-radius: 999px; padding: 9px 18px 9px 14px; cursor: pointer;
+}
+.rec-btn.on { background: var(--err); color: #fff; border-color: var(--err); }
+.rec-btn.on .smp-dot { background: #fff; border-radius: 2px; }
+.rec-btn.counting { background: #c9932b; border-color: #c9932b; color: #1c1404; }
+.rec-status { margin: 0; font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.rec-status[data-tone="live"] { color: var(--err); font-weight: 600; }
+.rec-quant { border-top: 1px dashed var(--line); padding-top: 10px; display: flex; flex-direction: column; gap: 10px; }
+.rec-quant .tempo-val { min-width: 6ch; }
+.rec-summary { font-size: 13px; color: var(--ink); }
+.rec-apply { padding: 8px 18px; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }

@@ -329,6 +329,8 @@ class DrumKit {
       case 'ride': this.ride.triggerAttackRelease(320, 0.05, time, vel); break;
       case 'crash': this.crash.triggerAttackRelease(0.5, time, vel); break;
       case 'shaker': this.shaker.triggerAttackRelease(0.04, time, vel); break;
+      case 'click': this.rim.triggerAttackRelease('E6', 0.02, time, vel); break;     // metronome
+      case 'clickHi': this.rim.triggerAttackRelease('B6', 0.02, time, vel); break;   // metronome downbeat
     }
   }
   // Instrument-like no-ops so a kit can sit in a channel like anything else.
@@ -497,7 +499,16 @@ export function play(tracks, { total, marks = [], loop = false, onStep, onMark, 
   } else {
     T.scheduleOnce((time) => Tone.getDraw().schedule(() => { stop(); onEnd?.(); }, time), end + 0.05);
   }
-  T.start('+0.08');
+  const at = Tone.now() + 0.08;
+  T.start(at);
+  return at; // audio-clock time of t = 0
+}
+
+/** The audio clock right now, minus output latency: when a sound triggered now is actually heard. */
+export function heardNow() {
+  const Tone = window.Tone;
+  const raw = Tone.getContext().rawContext;
+  return Tone.immediate() - (raw.outputLatency || raw.baseLatency || 0);
 }
 
 export function stop() {
