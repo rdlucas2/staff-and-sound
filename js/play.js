@@ -4,11 +4,12 @@ import { connectMidiInput } from './midi.js';
 import { defaultPatch, normalizePatch } from './synth.js';
 import { mountSynthPanel } from './synth-panel.js';
 import { createKeyboard, noteLabel } from './keyboard.js';
+import { initSampler, mountSamplerPanel } from './sampler-panel.js';
 
 const $ = (id) => document.getElementById(id);
 const STORE_KEY = 'staff-and-sound:freeplay';
 const SOUNDS = {
-  synth: 'Synth (editable)', piano: 'Grand piano', epiano: 'Electric piano', organ: 'Organ', strings: 'Strings',
+  synth: 'Synth (editable)', sampler: 'Sampler (your sound)', piano: 'Grand piano', epiano: 'Electric piano', organ: 'Organ', strings: 'Strings',
   guitar: 'Nylon guitar', pluck: 'Pluck synth', chip: 'Chiptune', upright: 'Upright bass', ebass: 'Electric bass',
 };
 const PADS = [
@@ -157,6 +158,13 @@ const synthPanel = mountSynthPanel($('fpSynthPanel'), {
     save();
   },
 });
+
+const samplerPanel = mountSamplerPanel($('fpSamplerPanel'), {
+  idPrefix: 'fps',
+  onNewSound: () => { panic(); state.sound = 'sampler'; $('fpSound').value = 'sampler'; sync(); showSynth(); save(); },
+  preview: (m) => { audio.unlock(); audio.preview({ id: 'free-preview', sound: 'sampler', volume: 0 }, [m], 0.9); },
+});
+initSampler().then(() => samplerPanel.refresh());
 
 // Computer keyboard.
 const downKeys = new Map(); // key -> midi

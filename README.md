@@ -7,6 +7,7 @@ Write music on a staff and hear it played back, in the browser, with no build st
 - **Parts:** add up to 8 parts, each with its own staff, clef and instrument. Bars line up across staves and all parts play together.
 - **Sound:** [Tone.js](https://tonejs.github.io/) plays a sampled grand piano (Salamander), plus strings, organ, pluck and chiptune synths. Each part has volume, mute and solo; there's a master volume too.
 - **Synth:** any part can use an editable synth, with two oscillators (unison spread, pulse width), amp and filter envelopes, resonant filter, vibrato and tremolo, mono with glide, chorus, delay and reverb. Comes with presets such as Synth Brass, Strings, Square Lead, Glass Bell, Synth Bass, Warm Pad, 8-bit Lead and Wah Clav.
+- **Sampler:** record a sound with the microphone (or load an audio file) and play it across the keyboard, Casio SK-1 style, with auto-trim, root note, loop, reverse, attack and release.
 - **Freeplay:** `play.html` is just the instrument: a big multi-touch keyboard, computer-keyboard and MIDI input with velocity and sustain pedal, octave and transpose, drum pads and the synth editor.
 - **Input:** on-screen piano, computer keyboard, a MIDI keyboard (Web MIDI API), or a text notation.
 - **Import:** open any `.mid` file (picker or drag-and-drop) or one of the bundled examples. Each track becomes a part; rhythms snap to sixteenths, notes crossing a bar line are tied, and two-hand piano tracks split onto two staves. Undo restores what you had.
@@ -78,6 +79,17 @@ The **Freeplay keyboard** (`play.html`, linked from the top of the page) has no 
 
 Freeplay settings and the patch are remembered separately from the score.
 
+## Sampler
+
+Choose **Sampler (your sound)** for a part (then **Edit sample**), or use the Sampler section on the freeplay page:
+
+1. **Record** asks for the microphone and records up to 5 seconds, with a level meter. Or **Load audio file…** (WAV, MP3, OGG and the like, up to 10 seconds).
+2. Silence is trimmed and the level normalized automatically. Adjust **Start** and **End** on the waveform, or run **Auto-trim silence** again.
+3. Set the **Root note** to the pitch you recorded (the key that plays it back unchanged); other keys play it faster or slower.
+4. Shape it with **Attack**, **Release**, **Level**, **Loop while held** and **Reverse**.
+
+There's one shared sample, kept in your browser's IndexedDB so it survives reloads. Until you record one, a built-in kalimba sound is used. The microphone needs HTTPS or localhost and isn't available inside some embedded viewers (including the claude.ai artifact viewer); loading a file works everywhere. MIDI export can't carry the sample, so sampler parts export as General MIDI program 54 (Synth Voice).
+
 ## Starting over
 
 **New** clears everything: one empty piano part, no chords, 4/4 at 108 bpm, band settings back to their defaults. **Load demo** brings back the opening Ode to Joy demo. Both can be undone with **Undo** in the status line. Your master volume is kept.
@@ -125,6 +137,8 @@ js/audio.js         Tone.js instruments (incl. synth, drum kit, guitar, e-piano,
 js/synth.js         synth patch model, presets, editor control definitions
 js/synth-panel.js   the synth editor UI (used on both pages)
 js/keyboard.js      playable on-screen keyboard (multi-touch, glissando, velocity)
+js/sampler.js       sampler data: mic recording, file decoding, trimming, IndexedDB storage
+js/sampler-panel.js the sampler editor UI (used on both pages)
 js/play.js          the freeplay page
 play.html           freeplay page shell
 js/chords.js        chord symbol parser, chart parsing, chord-degree spelling
