@@ -8,6 +8,7 @@ import { parseChart, chartFromText, chartToText, spellInChord } from './chords.j
 import { STYLES, generateBacking } from './band.js';
 import { defaultPatch, normalizePatch } from './synth.js';
 import { mountSynthPanel } from './synth-panel.js';
+import { initSampler, mountSamplerPanel } from './sampler-panel.js';
 import { buildPlan, BAND_IDS, hasChords } from './plan.js';
 
 const $ = (id) => document.getElementById(id);
@@ -17,7 +18,7 @@ const MAX_PARTS = 8;
 const PART_COLORS = ['#8a2f5e', '#1f7a72', '#b0661a', '#4a5bb8', '#5e7d24', '#a23b3b', '#6b4fa0', '#2f6f9a'];
 const SOUND_LABELS = {
   piano: 'Grand piano', epiano: 'Electric piano', guitar: 'Nylon guitar', organ: 'Organ', strings: 'Strings',
-  upright: 'Upright bass', ebass: 'Electric bass', pluck: 'Pluck synth', chip: 'Chiptune', synth: 'Synth (editable)',
+  upright: 'Upright bass', ebass: 'Electric bass', pluck: 'Pluck synth', chip: 'Chiptune', synth: 'Synth (editable)', sampler: 'Sampler (your sound)',
 };
 const COMP_SOUNDS = ['piano', 'epiano', 'guitar', 'organ', 'strings', 'pluck', 'chip'];
 const BASS_SOUNDS = ['upright', 'ebass', 'pluck', 'piano'];
@@ -213,6 +214,7 @@ function renderParts() {
         <button class="ms${p.mute ? ' on' : ''}" type="button" data-act="mute" aria-pressed="${p.mute}" title="Mute">M</button>
         <button class="ms solo${p.solo ? ' on' : ''}" type="button" data-act="solo" aria-pressed="${p.solo}" title="Solo">S</button>
       </div>
+      ${p.sound === 'sampler' ? `<button class="edit-sound${samplerOpen ? ' on' : ''}" type="button" data-act="sampler" aria-pressed="${samplerOpen}">${samplerOpen ? 'Editing sample' : 'Edit sample'}<span class="patch-name">record or load a sound</span></button>` : ''}
       ${p.sound === 'synth' ? `<button class="edit-sound${synthEditing === p.id ? ' on' : ''}" type="button" data-act="synth" aria-pressed="${synthEditing === p.id}">${synthEditing === p.id ? 'Editing sound' : 'Edit sound'}<span class="patch-name">${esc(p.patch?.name || '')}</span></button>` : ''}
     </article>`).join('') + (state.parts.length < MAX_PARTS
     ? `<button class="part add" id="addPart" type="button"><span class="plus" aria-hidden="true">+</span><span>Add part</span><span class="sub">Layer another instrument</span></button>`
@@ -229,6 +231,7 @@ $('parts').addEventListener('click', (e) => {
   if (act === 'mute') { updatePart(pi, { mute: !state.parts[pi].mute }); renderParts(); return; }
   if (act === 'solo') { updatePart(pi, { solo: !state.parts[pi].solo }); renderParts(); return; }
   if (act === 'synth') { openSynthEditor(synthEditing === state.parts[pi].id ? null : pi); return; }
+  if (act === 'sampler') { openSampler(samplerOpen ? false : pi); return; }
   if (pi !== state.active && !e.target.matches('input, select')) setActive(pi);
 });
 $('parts').addEventListener('focusin', (e) => {
@@ -263,6 +266,7 @@ $('parts').addEventListener('change', (e) => {
     updatePart(pi, fields);
     if (e.target.value === 'synth') openSynthEditor(pi);
     else { if (synthEditing === state.parts[pi].id) openSynthEditor(null); renderParts(); }
+    if (e.target.value === 'sampler') openSampler(pi);
   }
   if (e.target.dataset.act === 'clef') {
     updatePart(pi, { clef: e.target.value }, { rerender: true });
@@ -499,6 +503,27 @@ function openSynthEditor(pi) {
 }
 $('synthClose').addEventListener('click', () => openSynthEditor(null));
 
+// ---------- sampler (one shared sound) ----------
+let samplerOpen = false;
+let samplerPanel = null;
+const samplerReady = initSampler();
+/** Open the sampler editor (pi: part to make active, or false to close). */
+function openSampler(pi) {
+  samplerOpen = pi !== false;
+  $('samplerSection').hidden = !samplerOpen;
+  if (samplerOpen) {
+    if (typeof pi === 'number' && state.active !== pi) setActive(pi);
+    if (!samplerPanel) {
+      samplerPanel = mountSamplerPanel($('samplerPanel'), {
+        preview: (m) => { audio.unlock(); audio.preview({ ...part(), sound: 'sampler' }, [m], 0.9); },
+      });
+      samplerReady.then(() => samplerPanel.refresh());
+    } else samplerPanel.refresh();
+  }
+  renderParts();
+}
+$('samplerClose').addEventListener('click', () => openSampler(false));
+
 // ---------- editing ----------
 let lastInsert = { idx: -1, at: 0, pi: -1 };
 
@@ -694,6 +719,8 @@ function applyPiece({ ts, bpm, parts, active = 0, band }) {
   stopPlayback();
   synthEditing = null;
   $('synthSection').hidden = true;
+  samplerOpen = false;
+  $('samplerSection').hidden = true;
   setTimeSig(ts);
   if (band) { state.band = structuredClone(band); renderBand(); }
   if (bpm) { $('tempo').value = bpm; $('tempoVal').textContent = bpm; }

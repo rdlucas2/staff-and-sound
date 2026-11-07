@@ -31,6 +31,8 @@ js/audio.js         Tone.js instruments (sampled piano, editable synth, drum kit
 js/synth.js         synth patch model, presets and editor control definitions (no audio, runs in Node)
 js/synth-panel.js   synth editor UI, shared by both pages
 js/keyboard.js      playable on-screen keyboard widget
+js/sampler.js       sampler data: recording, decoding, trimming, IndexedDB storage
+js/sampler-panel.js sampler editor UI, shared by both pages
 js/play.js          freeplay page (play.html)
 js/midi.js          MIDI file export and Web MIDI keyboard input
 js/midi-import.js   MIDI file to parts (quantizing, chords, ties across bar lines)
@@ -66,6 +68,7 @@ There's no test framework yet; check your change directly.
 
 - **Pure modules:** run them in Node, e.g. `node -e "import('./js/chords.js').then(m => console.log(m.parseChord('Dm7b5')))"`.
 - **The page:** use Playwright with headless Chromium. Load the page, use the feature, check for page errors, and take screenshots at desktop width and around 400px, in light and dark themes. Chromium needs `--autoplay-policy=no-user-gesture-required` to start audio without a click.
+- **Microphone:** launch Chromium with `--use-fake-ui-for-media-stream --use-fake-device-for-media-stream` and grant the `microphone` permission to get a fake mic that beeps.
 - **Audio:** you can't listen in headless mode, but you can measure. New synth presets should land within a few dB of the piano when playing a three-note chord. Connect a `Tone.Meter` to `Tone.getDestination()` and compare levels when adding or changing instruments.
 - **Clicking the score:** VexFlow sets `pointer-events="none"` on its SVG, and `css/styles.css` turns it back on. Keep that rule when changing the score styles.
 

@@ -3,7 +3,7 @@ import { makeZip } from './zip.js';
 import { GM_DRUMS } from './band.js';
 
 // General MIDI program numbers for each sound, so other software picks a similar instrument.
-export const GM_PROGRAM = { piano: 0, epiano: 4, organ: 16, guitar: 24, upright: 32, ebass: 33, pluck: 45, strings: 48, chip: 80 };
+export const GM_PROGRAM = { piano: 0, epiano: 4, organ: 16, guitar: 24, upright: 32, ebass: 33, pluck: 45, strings: 48, sampler: 54, chip: 80 };
 const clamp = (v) => Math.max(0.05, Math.min(1, v));
 
 /**

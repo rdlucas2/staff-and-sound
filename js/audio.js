@@ -208,6 +208,95 @@ class SynthInstrument {
   }
 }
 
+// ---------- sampler ----------
+// One shared sample (see sampler.js) played by every 'sampler' sound.
+let sample = null; // { buffer: ToneAudioBuffer, settings }
+
+/** Install the current sample ({ pcm, sampleRate, settings }) or clear it (null). */
+export function setSample(data) {
+  const Tone = window.Tone;
+  if (!data) { sample = null; return; }
+  const ctx = Tone.getContext().rawContext;
+  const ab = ctx.createBuffer(1, data.pcm.length, data.sampleRate);
+  const ch = ab.getChannelData(0);
+  ch.set(data.pcm);
+  if (data.settings.reverse) ch.reverse();
+  sample = { buffer: new Tone.ToneAudioBuffer(ab), settings: { ...data.settings } };
+}
+/** Update settings that don't need a new buffer (root, trim, envelope, loop, level). */
+export function setSampleSettings(settings) {
+  if (sample) sample.settings = { ...settings };
+}
+export const hasSample = () => !!sample;
+
+/** Plays the shared sample pitched across the keyboard; reads the sample at each note, so edits are heard right away. */
+class SampleInstrument {
+  constructor() {
+    this.out = new window.Tone.Gain(1);
+    this.voices = new Map(); // note -> [voice]
+  }
+  connect(dest) { this.out.connect(dest); return this; }
+  start(note, time, vel = 0.8) {
+    const Tone = window.Tone;
+    if (!sample) return null;
+    const st = sample.settings, dur = sample.buffer.duration;
+    const m = Tone.Frequency(note).toMidi();
+    const rate = Math.pow(2, (m - st.root) / 12);
+    // Trim points are chosen on the forward waveform; flip them when the sample is reversed.
+    let a = st.start * dur, b = st.end * dur;
+    if (st.reverse) [a, b] = [dur - b, dur - a];
+    if (b - a < 0.005) return null;
+    const t = time ?? Tone.now();
+    const src = new Tone.ToneBufferSource({ url: sample.buffer, playbackRate: rate, loop: st.loop, loopStart: a, loopEnd: b, fadeIn: 0.002, fadeOut: 0.005 });
+    const g = new Tone.Gain(0).connect(this.out);
+    src.connect(g);
+    const peak = vel * Math.pow(10, st.level / 20);
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(peak, t + Math.max(0.002, st.attack));
+    src.start(t, a);
+    const v = { src, g, release: st.release, ended: false };
+    if (!st.loop) src.stop(t + (b - a) / rate);
+    src.onended = () => {
+      v.ended = true;
+      setTimeout(() => { g.dispose(); src.dispose(); }, 50);
+      const list = this.voices.get(note);
+      if (list) this.voices.set(note, list.filter((x) => x !== v));
+    };
+    if (!this.voices.has(note)) this.voices.set(note, []);
+    this.voices.get(note).push(v);
+    return v;
+  }
+  stopVoice(v, time) {
+    if (!v || v.ended) return;
+    const Tone = window.Tone;
+    const t = Math.max(time ?? Tone.now(), Tone.now());
+    v.g.gain.cancelScheduledValues(t);
+    v.g.gain.setValueAtTime(v.g.gain.getValueAtTime(t), t);
+    v.g.gain.linearRampToValueAtTime(0, t + v.release);
+    try { v.src.stop(t + v.release + 0.02); } catch {}
+  }
+  triggerAttack(notes, time, vel) { [].concat(notes).forEach((n) => this.start(n, time, vel)); return this; }
+  triggerRelease(notes, time) {
+    for (const n of [].concat(notes)) {
+      const list = this.voices.get(n) || [];
+      list.forEach((v) => this.stopVoice(v, time));
+      this.voices.delete(n);
+    }
+    return this;
+  }
+  triggerAttackRelease(notes, dur, time, vel) {
+    const Tone = window.Tone;
+    const t = time ?? Tone.now();
+    for (const n of [].concat(notes)) {
+      const v = this.start(n, t, vel);
+      if (v) this.stopVoice(v, t + Math.max(0.03, dur));
+    }
+    return this;
+  }
+  releaseAll() { for (const n of [...this.voices.keys()]) this.triggerRelease(n); return this; }
+  dispose() { this.releaseAll(); setTimeout(() => this.out.dispose(), 1000); }
+}
+
 /** Synthesized drum kit, played with General MIDI-style names. */
 class DrumKit {
   constructor() {
@@ -255,6 +344,8 @@ function build(kind, part) {
   switch (kind) {
     case 'synth':
       return new SynthInstrument(part?.patch);
+    case 'sampler':
+      return new SampleInstrument();
     case 'piano': {
       const urls = {};
       for (const note of Object.keys(SAMPLE_URLS)) urls[note] = buffers.get(note);
