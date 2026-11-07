@@ -15,19 +15,12 @@
   <header>
     <div>
       <h1>Staff <em>&amp;</em> Sound</h1>
-      <p class="lede">Write on the staff with the keyboard below, a MIDI keyboard, or plain text. VexFlow engraves it and Tone.js plays it back on a sampled grand piano.</p>
+      <p class="lede">Write on the staff with the keyboard below, a MIDI keyboard, or plain text. VexFlow engraves it and Tone.js plays it back on a sampled grand piano and synths. Add parts to layer instruments.</p>
     </div>
     <div class="transport">
       <button class="play" id="playBtn" type="button" aria-label="Play"><svg viewBox="0 0 16 16" id="playIcon"><path d="M3 1.8v12.4L14 8z"/></svg><span id="playLabel">Play</span></button>
       <div class="field"><label for="tempo">Tempo</label><input type="range" id="tempo" min="40" max="220" value="108"><span class="tempo-val" id="tempoVal">108</span></div>
-      <div class="field"><label for="sound">Sound</label>
-        <select id="sound">
-          <option value="piano">Grand piano</option>
-          <option value="organ">Organ</option>
-          <option value="chip">Chiptune</option>
-          <option value="pluck">Pluck synth</option>
-        </select>
-      </div>
+      <div class="field"><label for="master">Volume</label><input type="range" id="master" min="0" max="100" value="80"><span class="tempo-val" id="masterVal">80</span></div>
       <label class="check"><input type="checkbox" id="loop"> Loop</label>
       <button class="ghost" id="exportBtn" type="button">Export MIDI</button>
     </div>
@@ -39,10 +32,16 @@
 
   <section class="sheet" aria-label="Score">
     <div id="score"></div>
-    <div class="sheet-meta"><span id="metaLeft"></span><span>Click a note to select it · new notes go after the selection</span></div>
+    <div class="sheet-meta"><span id="metaLeft"></span><span>Click a staff to edit that part · click a note to select it</span></div>
+  </section>
+
+  <section class="parts-wrap" aria-label="Parts">
+    <div class="section-head"><h2>Parts</h2><p>Each part is its own staff and instrument. They all play together.</p></div>
+    <div class="parts" id="parts"></div>
   </section>
 
   <section class="deck" aria-label="Note input">
+    <div class="deck-head">Writing to <span class="part-tag" id="pianoFor"></span></div>
     <div class="row">
       <div class="group" role="group" aria-label="Duration">
         <span class="group-label">Duration</span>
@@ -60,7 +59,6 @@
       </div>
       <span class="spacer"></span>
       <div class="group">
-        <div class="field"><label for="clef">Clef</label><select id="clef"><option value="treble">Treble</option><option value="bass">Bass</option></select></div>
         <div class="field"><label for="timesig">Time</label><select id="timesig"><option>4/4</option><option>3/4</option><option>2/4</option><option>6/8</option></select></div>
       </div>
     </div>
@@ -82,7 +80,7 @@
 
   <section class="notation">
     <div class="notation-head">
-      <h2>Notation as text</h2>
+      <h2>Notation as text <span class="part-tag" id="textPart"></span></h2>
       <p>Edit directly. <code>C#4/q</code> pitch/duration · <code>(C4 E4 G4)/h</code> chord · <code>r/8</code> rest · <code>.</code> dots · duration carries over · <code>|</code> optional</p>
     </div>
     <textarea id="text" spellcheck="false" aria-label="Notes as text"></textarea>
@@ -98,6 +96,7 @@
         <div><span>Octave down / up</span><kbd>z / x</kbd></div>
         <div><span>Move selection</span><kbd>← →</kbd></div>
         <div><span>Deselect / play–stop</span><kbd>Esc / space</kbd></div>
+        <div><span>Previous / next part</span><kbd>↑ ↓</kbd></div>
         <div><span>MIDI keyboard chords</span><kbd>press together</kbd></div>
       </div>
     </details>

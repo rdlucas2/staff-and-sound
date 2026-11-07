@@ -2,21 +2,28 @@
 import { toEvents } from './notation.js';
 import { makeZip } from './zip.js';
 
-/** Build a Standard MIDI File (Uint8Array) from the note model. */
-export function buildMidiFile(notes, { bpm, ts, name = 'Staff & Sound' }) {
+// General MIDI program numbers for each sound, so other software picks a similar instrument.
+const GM_PROGRAM = { piano: 0, organ: 16, chip: 80, pluck: 45, strings: 48 };
+
+/** Build a Standard MIDI File (Uint8Array): one track per part, each on its own channel. */
+export function buildMidiFile(parts, { bpm, ts, name = 'Staff & Sound' }) {
   const midi = new window.Midi();
   const [n, d] = ts.split('/').map(Number);
   midi.header.setTempo(bpm);
   midi.header.timeSignatures.push({ ticks: 0, timeSignature: [n, d] });
   midi.header.name = name;
   midi.header.update();
-  const track = midi.addTrack();
-  track.name = name;
-  track.instrument.number = 0; // Acoustic Grand Piano
-  const { events } = toEvents(notes, bpm);
-  for (const ev of events) {
-    for (const m of ev.midis) track.addNote({ midi: m, time: ev.t, duration: ev.dur * 0.98, velocity: 0.8 });
-  }
+  parts.forEach((part, pi) => {
+    const track = midi.addTrack();
+    track.name = part.name;
+    track.channel = pi >= 9 ? pi + 1 : pi; // skip channel 10 (index 9), reserved for drums
+    track.instrument.number = GM_PROGRAM[part.sound] ?? 0;
+    const vel = Math.max(0.1, Math.min(1, 0.8 * Math.pow(10, part.volume / 40)));
+    const { events } = toEvents(part.notes, bpm);
+    for (const ev of events) {
+      for (const m of ev.midis) track.addNote({ midi: m, time: ev.t, duration: ev.dur * 0.98, velocity: vel });
+    }
+  });
   return midi.toArray();
 }
 

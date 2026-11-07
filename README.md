@@ -3,9 +3,10 @@
 Write music on a staff and hear it played back, in the browser, with no build step.
 
 - **Engraving:** [VexFlow 5](https://github.com/vexflow/vexflow) draws the score as SVG, with beaming, accidentals and line wrapping handled automatically.
-- **Sound:** [Tone.js](https://tonejs.github.io/) plays a sampled grand piano (Salamander), plus organ, chiptune and pluck synths.
+- **Parts:** add up to 8 parts, each with its own staff, clef and instrument. Bars line up across staves and all parts play together.
+- **Sound:** [Tone.js](https://tonejs.github.io/) plays a sampled grand piano (Salamander), plus strings, organ, pluck and chiptune synths. Each part has volume, mute and solo; there's a master volume too.
 - **Input:** on-screen piano, computer keyboard, a MIDI keyboard (Web MIDI API), or a text notation.
-- **Export:** saves a Standard MIDI File (`.mid`) via [@tonejs/midi](https://github.com/Tonejs/Midi).
+- **Export:** saves a Standard MIDI File (`.mid`) via [@tonejs/midi](https://github.com/Tonejs/Midi), one track per part.
 
 ## Run it
 
@@ -44,6 +45,7 @@ Durations: `w` `h` `q` `8` `16` `32`. Accidentals: `#` `##` `b` `bb` `n`.
 | `r` / `Backspace` | add rest / delete |
 | `z` / `x` | octave down / up |
 | `←` `→` / `Esc` | move / clear selection |
+| `↑` `↓` | previous / next part |
 | `Space` | play / stop |
 
 On a MIDI keyboard, notes pressed together (within ~70 ms) become a chord.
@@ -55,8 +57,8 @@ index.html          page shell; loads VexFlow, Tone.js and @tonejs/midi from jsD
 css/styles.css      styles (light and dark themes)
 js/main.js          UI state, editing, input handling, playback wiring
 js/notation.js      note model, text parser/serializer, bar splitting, timing
-js/score.js         VexFlow rendering (low-level API) with clickable notes
-js/audio.js         Tone.js instruments and Transport-based playback
+js/score.js         VexFlow rendering: stacked staves per system, bars aligned across parts
+js/audio.js         Tone.js instruments, per-part channels (volume/mute/solo), layered playback
 js/midi.js          MIDI file export and Web MIDI input
 js/zip.js           tiny store-only zip writer (used when .mid downloads are not allowed)
 samples/salamander  piano samples (CC BY 3.0, see README.txt there)

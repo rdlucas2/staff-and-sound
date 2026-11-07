@@ -68,7 +68,7 @@ select { font: 500 14px var(--f-body); color: var(--ink); background: var(--surf
 #score svg { display: block; }
 #score .vf-stavenote { cursor: pointer; }
 #score .is-selected, #score .is-selected * { fill: #2a6fb0 !important; stroke: #2a6fb0 !important; }
-#score .is-playing, #score .is-playing * { fill: #8a2f5e !important; stroke: #8a2f5e !important; }
+#score .is-playing, #score .is-playing * { fill: var(--pc, #8a2f5e) !important; stroke: var(--pc, #8a2f5e) !important; }
 .sheet-meta { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 16px; padding: 4px 8px 0; font-size: 12px; color: #6b6a63; font-family: var(--f-mono); }
 
 /* input deck */
@@ -137,3 +137,54 @@ details summary { cursor: pointer; color: var(--ink); font-weight: 500; }
 .status:empty { display: none; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 .credits { margin: 8px 0 0; font-size: 12px; color: var(--muted); }
+
+/* parts */
+.parts-wrap { display: flex; flex-direction: column; gap: 10px; }
+.section-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 12px; }
+.section-head h2 { font-family: var(--f-display); font-weight: 500; font-size: 20px; margin: 0; }
+.section-head p { margin: 0; font-size: 13px; color: var(--muted); }
+.parts { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
+.part {
+  background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px;
+  display: flex; flex-direction: column; gap: 8px; cursor: pointer; min-width: 0;
+  box-shadow: inset 4px 0 0 var(--pc, var(--line));
+}
+.part.is-active { border-color: var(--pc); box-shadow: inset 4px 0 0 var(--pc), 0 0 0 1px var(--pc); }
+.part-head { display: flex; align-items: center; gap: 8px; }
+.chip { width: 10px; height: 10px; border-radius: 50%; background: var(--pc); flex: none; }
+.part-name {
+  flex: 1; min-width: 0; font: 600 14px var(--f-body); color: var(--ink); background: transparent;
+  border: 1px solid transparent; border-radius: 5px; padding: 3px 5px;
+}
+.part-name:hover { border-color: var(--line); }
+.part-name:focus { border-color: var(--select); background: var(--bg); }
+.icon-btn {
+  width: 28px; height: 28px; border-radius: 6px; border: 1px solid transparent; background: transparent;
+  color: var(--muted); font-size: 18px; line-height: 1; cursor: pointer;
+}
+.icon-btn:hover:not(:disabled) { border-color: var(--line); color: var(--err); }
+.icon-btn:disabled { opacity: .3; cursor: default; }
+.part-row { display: flex; align-items: center; gap: 6px; }
+.part-row select { flex: 1; min-width: 0; font-size: 13px; padding: 4px 6px; }
+.part-row input[type=range] { flex: 1; min-width: 60px; accent-color: var(--pc); }
+.db { font: 12px var(--f-mono); color: var(--muted); min-width: 6ch; text-align: right; font-variant-numeric: tabular-nums; }
+.ms {
+  width: 28px; height: 26px; border-radius: 5px; border: 1px solid var(--line); background: var(--bg);
+  font: 600 12px var(--f-mono); color: var(--muted); cursor: pointer;
+}
+.ms.on { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.ms.solo.on { background: #c9932b; border-color: #c9932b; color: #1c1404; }
+.part.add {
+  border: 1.5px dashed var(--line); background: transparent; box-shadow: none; align-items: center; justify-content: center;
+  min-height: 118px; color: var(--muted); font: 500 14px var(--f-body); gap: 2px;
+}
+.part.add:hover { border-color: var(--accent); color: var(--accent); }
+.part.add .plus { font-size: 26px; line-height: 1; font-weight: 300; }
+.part.add .sub { font-size: 12px; opacity: .8; }
+.deck-head { font-size: 13px; color: var(--muted); }
+.part-tag {
+  display: inline-flex; align-items: center; gap: 6px; font: 600 13px var(--f-body); color: var(--ink);
+  padding: 1px 8px 1px 6px; border-radius: 999px; border: 1px solid var(--pc, var(--line)); vertical-align: middle;
+}
+.part-tag::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--pc, var(--line)); }
+.notation-head h2 .part-tag { margin-left: 6px; }
