@@ -12,11 +12,7 @@ const MAX_PARTS = 8;
 const PART_COLORS = ['#8a2f5e', '#1f7a72', '#b0661a', '#4a5bb8', '#5e7d24', '#a23b3b', '#6b4fa0', '#2f6f9a'];
 const SOUND_LABELS = { piano: 'Grand piano', organ: 'Organ', strings: 'Strings', pluck: 'Pluck synth', chip: 'Chiptune' };
 const SOUND_CYCLE = ['piano', 'strings', 'organ', 'pluck', 'chip'];
-const EXAMPLES = [
-  { file: 'demos/minuet-in-g.mid', title: 'Minuet in G', by: 'Petzold (attr. Bach)' },
-  { file: 'demos/canon-in-d.mid', title: 'Canon in D', by: 'Pachelbel' },
-  { file: 'demos/twinkle-twinkle.mid', title: 'Twinkle, Twinkle', by: 'Traditional' },
-];
+let EXAMPLES = []; // loaded from demos/examples.json
 
 // Theme from Beethoven's Ninth (public domain), with a simple bass line underneath.
 const SAMPLE_PARTS = [
@@ -434,14 +430,22 @@ async function loadMidi(buffer, label) {
   $('undoImport').hidden = false;
 }
 
-async function loadExample(ex) {
-  setStatus('importStatus', `Loading ${ex.title}…`);
+function loadExample(ex) {
+  const bin = atob(ex.midi);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  loadMidi(bytes.buffer, ex.title);
+}
+
+async function loadExampleList() {
   try {
-    const res = await fetch(ex.file);
+    const res = await fetch('demos/examples.json');
     if (!res.ok) throw new Error(res.status);
-    await loadMidi(await res.arrayBuffer(), ex.title);
+    EXAMPLES = await res.json();
+    $('examples').innerHTML = EXAMPLES.map((ex, i) =>
+      `<button class="example" type="button" data-ex="${i}"><span>${esc(ex.title)}</span><span class="by">${esc(ex.by)}</span></button>`).join('');
   } catch {
-    setStatus('importStatus', `Couldn't load ${ex.title}. If you opened index.html straight from disk, run a local server instead.`, 'warn');
+    $('examples').innerHTML = '<span class="hint-drop">Examples need the page served over HTTP.</span>';
   }
 }
 
@@ -454,8 +458,7 @@ async function loadFile(file) {
   await loadMidi(await file.arrayBuffer(), file.name);
 }
 
-$('examples').innerHTML = EXAMPLES.map((ex, i) =>
-  `<button class="example" type="button" data-ex="${i}" title="${esc(ex.by)}"><span>${esc(ex.title)}</span><span class="by">${esc(ex.by)}</span></button>`).join('');
+loadExampleList();
 $('examples').addEventListener('click', (e) => {
   const b = e.target.closest('[data-ex]');
   if (b) loadExample(EXAMPLES[+b.dataset.ex]);

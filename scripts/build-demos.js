@@ -14,6 +14,7 @@ const PIECES = [
   {
     file: 'minuet-in-g.mid',
     title: 'Minuet in G',
+    by: 'Petzold (attr. Bach)',
     ts: [3, 4], bpm: 112,
     key: 'G',
     tracks: [
@@ -28,6 +29,7 @@ const PIECES = [
   {
     file: 'canon-in-d.mid',
     title: 'Canon in D',
+    by: 'Pachelbel',
     ts: [4, 4], bpm: 66,
     key: 'D',
     tracks: (() => {
@@ -48,6 +50,8 @@ const PIECES = [
   {
     file: 'twinkle-twinkle.mid',
     title: 'Twinkle, Twinkle, Little Star',
+    short: 'Twinkle, Twinkle',
+    by: 'Traditional',
     ts: [4, 4], bpm: 100,
     key: 'C',
     tracks: [
@@ -61,6 +65,7 @@ const PIECES = [
 ];
 
 mkdirSync(new URL('../demos/', import.meta.url), { recursive: true });
+const index = [];
 for (const piece of PIECES) {
   const midi = new Midi();
   midi.header.setTempo(piece.bpm);
@@ -79,6 +84,12 @@ for (const piece of PIECES) {
       for (const m of ev.midis) track.addNote({ midi: m, time: ev.t, duration: ev.dur * 0.95, velocity: 0.75 });
     }
   });
-  writeFileSync(new URL(`../demos/${piece.file}`, import.meta.url), Buffer.from(midi.toArray()));
+  const bytes = Buffer.from(midi.toArray());
+  writeFileSync(new URL(`../demos/${piece.file}`, import.meta.url), bytes);
+  index.push({ file: piece.file, title: piece.short || piece.title, by: piece.by, midi: bytes.toString('base64') });
   console.log(`demos/${piece.file}  ${piece.title}  (${piece.tracks.length} tracks)`);
 }
+
+// The page loads examples from this JSON (some static hosts won't serve .mid files).
+writeFileSync(new URL('../demos/examples.json', import.meta.url), JSON.stringify(index, null, 1) + '\n');
+console.log('demos/examples.json');

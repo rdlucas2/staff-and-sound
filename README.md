@@ -78,7 +78,7 @@ scripts/            build-demos.js regenerates demos/ from text notation
 - **Canon in D** (Johann Pachelbel): three violins in canon over the ground bass
 - **Twinkle, Twinkle, Little Star** (traditional): melody and bass
 
-To change or add one, edit the script and run `npm install && npm run demos`.
+The script also writes `demos/examples.json` (the same files, base64-encoded), which is what the page loads, since some static hosts won't serve `.mid`. To change or add a piece, edit the script and run `npm install && npm run demos`.
 
 ## Import limits
 
