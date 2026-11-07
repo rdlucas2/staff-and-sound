@@ -19,6 +19,7 @@ Opening `index.html` straight from disk (`file://`) won't work: ES modules, the 
 
 ```
 index.html          page shell; loads VexFlow, Tone.js and @tonejs/midi from jsDelivr
+play.html           freeplay page: keyboard, synth editor, drum pads (no score)
 css/styles.css      all styles, as theme tokens with light and dark values
 js/main.js          UI state and wiring: parts, editing, chord editor, band panel, import/export, playback
 js/notation.js      note model, text notation parser/serializer, bar splitting, timing and swing
@@ -26,7 +27,11 @@ js/score.js         VexFlow rendering: stacked staves, aligned bars, ties, chord
 js/chords.js        chord symbol parser, chord chart parsing, spelling notes by chord degree
 js/band.js          backing band: styles, voicings, bass lines, drum patterns
 js/plan.js          merges parts and band into timed tracks for playback and MIDI export
-js/audio.js         Tone.js instruments (sampled piano, synths, drum kit), channels, playback
+js/audio.js         Tone.js instruments (sampled piano, editable synth, drum kit...), channels, playback
+js/synth.js         synth patch model, presets and editor control definitions (no audio, runs in Node)
+js/synth-panel.js   synth editor UI, shared by both pages
+js/keyboard.js      playable on-screen keyboard widget
+js/play.js          freeplay page (play.html)
 js/midi.js          MIDI file export and Web MIDI keyboard input
 js/midi-import.js   MIDI file to parts (quantizing, chords, ties across bar lines)
 js/zip.js           minimal zip writer (used where .mid downloads aren't allowed)
@@ -35,7 +40,7 @@ scripts/            build-demos.js, which regenerates demos/ from text notation
 samples/salamander  piano samples (CC BY 3.0)
 ```
 
-The modules that do no DOM or audio work (`notation.js`, `chords.js`, `band.js`, `midi-import.js`) run in Node as well as the browser. Keep them that way so they stay easy to test.
+The modules that do no DOM or audio work (`notation.js`, `chords.js`, `band.js`, `midi-import.js`, `synth.js`) run in Node as well as the browser. Keep them that way so they stay easy to test.
 
 ## Conventions
 
@@ -61,7 +66,7 @@ There's no test framework yet; check your change directly.
 
 - **Pure modules:** run them in Node, e.g. `node -e "import('./js/chords.js').then(m => console.log(m.parseChord('Dm7b5')))"`.
 - **The page:** use Playwright with headless Chromium. Load the page, use the feature, check for page errors, and take screenshots at desktop width and around 400px, in light and dark themes. Chromium needs `--autoplay-policy=no-user-gesture-required` to start audio without a click.
-- **Audio:** you can't listen in headless mode, but you can measure. Connect a `Tone.Meter` to `Tone.getDestination()` and compare levels when adding or changing instruments.
+- **Audio:** you can't listen in headless mode, but you can measure. New synth presets should land within a few dB of the piano when playing a three-note chord. Connect a `Tone.Meter` to `Tone.getDestination()` and compare levels when adding or changing instruments.
 - **Clicking the score:** VexFlow sets `pointer-events="none"` on its SVG, and `css/styles.css` turns it back on. Keep that rule when changing the score styles.
 
 ## Demos

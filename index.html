@@ -17,7 +17,7 @@
     <div>
       <h1>Staff <em>&amp;</em> Sound</h1>
       <p class="lede">Write on the staff with the keyboard below, a MIDI keyboard, or plain text. VexFlow engraves it and Tone.js plays it back on a sampled grand piano and synths. Add parts to layer instruments, or write chord symbols and let the band comp for you.</p>
-      <a class="repo-link" href="https://github.com/rdlucas2/staff-and-sound" target="_blank" rel="noopener"><svg class="gh-mark" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg><span>Source on GitHub</span></a>
+      <nav class="page-links"><a class="fp-link" href="play.html">Freeplay keyboard →</a><a class="repo-link" href="https://github.com/rdlucas2/staff-and-sound" target="_blank" rel="noopener"><svg class="gh-mark" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg><span>Source on GitHub</span></a></nav>
     </div>
     <div class="transport">
       <button class="play" id="playBtn" type="button" aria-label="Play"><svg viewBox="0 0 16 16" id="playIcon"><path d="M3 1.8v12.4L14 8z"/></svg><span id="playLabel">Play</span></button>
@@ -73,6 +73,14 @@
       <span class="hint-drop">or drop a .mid file on the page</span>
     </div>
     <div class="parts" id="parts"></div>
+  </section>
+
+  <section class="synth-section" id="synthSection" aria-label="Synth editor" hidden>
+    <div class="section-head">
+      <h2>Synth <span class="part-tag" id="synthFor"></span></h2>
+      <button class="ghost" id="synthClose" type="button">Close editor</button>
+    </div>
+    <div class="synth-panel" id="synthPanel"></div>
   </section>
 
   <section class="deck" aria-label="Note input">

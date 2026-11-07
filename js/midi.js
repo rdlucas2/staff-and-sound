@@ -34,7 +34,7 @@ export function buildMidiFile(plan, { bpm, ts, name = 'Staff & Sound' }) {
     }
     if (channel === 9) channel++; // channel 10 is reserved for drums
     track.channel = channel++ % 16;
-    track.instrument.number = GM_PROGRAM[tr.part.sound] ?? 0;
+    track.instrument.number = tr.part.sound === 'synth' ? (tr.part.patch?.gm ?? 81) : GM_PROGRAM[tr.part.sound] ?? 0;
     for (const ev of tr.events) {
       for (const m of ev.midis || []) {
         track.addNote({ midi: m, time: ev.t, duration: Math.max(0.03, ev.dur * 0.98), velocity: clamp((ev.vel ?? 0.8) * gain) });
@@ -76,7 +76,7 @@ export async function saveMidi(bytes, baseName = 'staff-and-sound') {
  * and onDevices(names[]) whenever devices come and go.
  * Rejects with an Error describing why MIDI isn't available.
  */
-export async function connectMidiInput({ onNoteOn, onNoteOff, onDevices }) {
+export async function connectMidiInput({ onNoteOn, onNoteOff, onControl, onDevices }) {
   if (!navigator.requestMIDIAccess) {
     throw new Error('This browser has no Web MIDI support. Try Chrome, Edge or Firefox.');
   }
@@ -91,6 +91,7 @@ export async function connectMidiInput({ onNoteOn, onNoteOff, onDevices }) {
     const cmd = status & 0xf0;
     if (cmd === 0x90 && d2 > 0) onNoteOn(d1, d2 / 127);
     else if (cmd === 0x80 || (cmd === 0x90 && d2 === 0)) onNoteOff(d1);
+    else if (cmd === 0xb0) onControl?.(d1, d2 / 127); // e.g. 64 = sustain pedal
   };
   const bind = () => {
     const names = [];

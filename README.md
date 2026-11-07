@@ -6,6 +6,8 @@ Write music on a staff and hear it played back, in the browser, with no build st
 - **Chords & band:** write chord symbols over the bars (click above a bar, or type a whole chart) and a backing band plays them: comping, bass and drums in jazz swing, bossa nova, jazz waltz, ballad, pop/rock or funk. A small, browser-only take on the Band-in-a-Box idea.
 - **Parts:** add up to 8 parts, each with its own staff, clef and instrument. Bars line up across staves and all parts play together.
 - **Sound:** [Tone.js](https://tonejs.github.io/) plays a sampled grand piano (Salamander), plus strings, organ, pluck and chiptune synths. Each part has volume, mute and solo; there's a master volume too.
+- **Synth:** any part can use an editable synth, with two oscillators (unison spread, pulse width), amp and filter envelopes, resonant filter, vibrato and tremolo, mono with glide, chorus, delay and reverb. Comes with presets such as Synth Brass, Strings, Square Lead, Glass Bell, Synth Bass, Warm Pad, 8-bit Lead and Wah Clav.
+- **Freeplay:** `play.html` is just the instrument: a big multi-touch keyboard, computer-keyboard and MIDI input with velocity and sustain pedal, octave and transpose, drum pads and the synth editor.
 - **Input:** on-screen piano, computer keyboard, a MIDI keyboard (Web MIDI API), or a text notation.
 - **Import:** open any `.mid` file (picker or drag-and-drop) or one of the bundled examples. Each track becomes a part; rhythms snap to sixteenths, notes crossing a bar line are tied, and two-hand piano tracks split onto two staves. Undo restores what you had.
 - **Export:** saves a Standard MIDI File (`.mid`) via [@tonejs/midi](https://github.com/Tonejs/Midi): one track per part, the band's comping and bass, and drums on General MIDI channel 10.
@@ -59,6 +61,23 @@ Voicings move by the smallest steps from chord to chord. Variation is seeded: **
 
 All band sounds are synthesized with Tone.js (no samples beyond the piano): a Karplus-Strong nylon guitar, an FM electric piano, upright and electric basses, and a synth drum kit.
 
+## Synth and freeplay
+
+Set a part's sound to **Synth (editable)** and its card gets an **Edit sound** button that opens the patch editor under the parts. The edited part becomes the active one, so the on-screen keys and your MIDI keyboard play through it while you adjust. Changes apply live, even while notes are sounding. Each part keeps its own patch, saved with the draft; MIDI export uses a matching General MIDI program (patches themselves can't travel in a MIDI file).
+
+The **Freeplay keyboard** (`play.html`, linked from the top of the page) has no score:
+
+| Input | Action |
+| --- | --- |
+| Mouse or touch | play; slide for a glissando; lower on the key is louder |
+| `a w s e d f t g y h u j k o l p ; '` | keys from C (letters shown on the keyboard) |
+| `z` / `x` | octave down / up |
+| `Space` (hold) or MIDI sustain pedal | sustain |
+| `1`–`8` | drum pads |
+| `Esc` | all notes off |
+
+Freeplay settings and the patch are remembered separately from the score.
+
 ## Starting over
 
 **New** clears everything: one empty piano part, no chords, 4/4 at 108 bpm, band settings back to their defaults. **Load demo** brings back the opening Ode to Joy demo. Both can be undone with **Undo** in the status line. Your master volume is kept.
@@ -102,7 +121,12 @@ css/styles.css      styles (light and dark themes)
 js/main.js          UI state, editing, input handling, playback wiring
 js/notation.js      note model, text parser/serializer, bar splitting, timing
 js/score.js         VexFlow rendering: stacked staves per system, bars aligned across parts
-js/audio.js         Tone.js instruments (incl. drum kit, guitar, e-piano, basses), channels, playback
+js/audio.js         Tone.js instruments (incl. synth, drum kit, guitar, e-piano, basses), channels, playback
+js/synth.js         synth patch model, presets, editor control definitions
+js/synth-panel.js   the synth editor UI (used on both pages)
+js/keyboard.js      playable on-screen keyboard (multi-touch, glissando, velocity)
+js/play.js          the freeplay page
+play.html           freeplay page shell
 js/chords.js        chord symbol parser, chart parsing, chord-degree spelling
 js/band.js          backing band: styles, voicings, walking/pattern bass, drum patterns
 js/plan.js          merges parts and band into timed tracks for playback and export
