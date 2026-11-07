@@ -37,6 +37,7 @@ js/play.js          freeplay page (play.html)
 js/midi.js          MIDI file export and Web MIDI keyboard input
 js/midi-import.js   MIDI file to parts; notesFromRaw turns timed notes into notation (straight/triplet grids, ties)
 js/quantize.js      quantizing a recorded performance (pure; runs in Node)
+js/showcase.js      demo songs (text notation, charts, patches, mix levels)
 js/zip.js           minimal zip writer (used where .mid downloads aren't allowed)
 demos/              example MIDI files and examples.json (generated)
 scripts/            build-demos.js, which regenerates demos/ from text notation
@@ -85,6 +86,12 @@ npm run demos
 ```
 
 This rewrites `demos/*.mid` and `demos/examples.json`. Commit the generated files.
+
+The **Demo songs** buttons are different: they're defined in `js/showcase.js` and loaded straight into the score, with no generated files. When you add or change one:
+
+- Check every bar adds up. Parse each part with `parse()` from `js/notation.js` and check that `toMeasures()` gives full bars and that each part has as many bars as the chart (`chartFromText`), e.g. in a quick Node script.
+- Check the melody against the chords. Non-chord tones are fine; wrong-key accidentals usually aren't.
+- Check the mix. Play it with the band muted, then with the parts muted, and keep the melody a little louder than the band. A `Tone.Meter` on `Tone.getDestination()` makes this measurable in a Playwright test.
 
 ## Licensing
 

@@ -9,6 +9,7 @@ import { parseChart, chartFromText, chartToText, spellInChord } from './chords.j
 import { STYLES, PROGRESSIONS, generateBacking } from './band.js';
 import { defaultPatch, normalizePatch } from './synth.js';
 import { mountSynthPanel } from './synth-panel.js';
+import { SHOWCASE } from './showcase.js';
 import { initSampler, mountSamplerPanel } from './sampler-panel.js';
 import { buildPlan, BAND_IDS, hasChords } from './plan.js';
 
@@ -702,6 +703,7 @@ function stopPlayback() {
 }
 function togglePlay() { state.playing ? stopPlayback() : startPlayback(); }
 function setPlayUI(on) {
+  if (!on) document.querySelectorAll('.demo-btn.on').forEach((b) => { b.classList.remove('on'); b.setAttribute('aria-pressed', 'false'); });
   $('playLabel').textContent = on ? 'Stop' : 'Play';
   $('playBtn').setAttribute('aria-label', on ? 'Stop' : 'Play');
   $('playIcon').innerHTML = on ? '<rect x="3" y="3" width="10" height="10" rx="1"/>' : '<path d="M3 1.8v12.4L14 8z"/>';
@@ -795,6 +797,43 @@ $('examples').addEventListener('click', (e) => {
 });
 $('importFile').addEventListener('change', async (e) => { await loadFile(e.target.files[0]); e.target.value = ''; });
 function setUndo() { undoSnapshot = snapshot(); $('undoImport').hidden = false; }
+
+// ---------- showcase demo songs ----------
+$('demoButtons').innerHTML = SHOWCASE.map((d, i) => `<button class="demo-btn" type="button" data-demo="${i}" aria-pressed="false" title="${esc(d.blurb)}">
+  <span class="demo-num">${i + 1}</span><span class="demo-text"><span class="demo-title">${esc(d.title)}</span><span class="demo-style">${esc(d.style)}</span></span></button>`).join('');
+
+async function playShowcase(i) {
+  const d = SHOWCASE[i];
+  const st = STYLES[d.band.style];
+  const base = defaultBand();
+  setUndo();
+  applyPiece({
+    ts: d.ts, bpm: d.bpm,
+    band: {
+      ...base, ...d.band, chart: [...d.band.chart],
+      comp: { ...base.comp, sound: st.comp, ...d.band.comp },
+      bass: { ...base.bass, sound: st.bass, ...d.band.bass },
+      drums: { ...base.drums, ...d.band.drums },
+    },
+    parts: d.parts.map((p) => ({
+      name: p.name, clef: p.clef, sound: p.sound, volume: p.volume ?? 0,
+      ...(p.patch ? { patch: normalizePatch(structuredClone(p.patch)) } : {}),
+      notes: parse(p.text).notes,
+    })),
+  });
+  $('demoBlurb').textContent = `${i + 1}. ${d.title} (${d.style}, by ${d.by}): ${d.blurb}`;
+  setStatus('importStatus', `Playing demo ${i + 1}, “${d.title}”. Undo brings back your score.`, 'ok');
+  await startPlayback();
+  const b = document.querySelector(`.demo-btn[data-demo="${i}"]`);
+  b?.classList.add('on');
+  b?.setAttribute('aria-pressed', 'true');
+}
+$('demoButtons').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-demo]');
+  if (!b) return;
+  if (b.classList.contains('on')) { stopPlayback(); return; }
+  playShowcase(+b.dataset.demo);
+});
 
 // ---------- new / demo ----------
 const DEFAULT_TEMPO = 108;
