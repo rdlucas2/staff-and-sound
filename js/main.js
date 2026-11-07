@@ -6,6 +6,8 @@ import { buildMidiFile, saveMidi, connectMidiInput } from './midi.js';
 import { importMidi, notesFromRaw } from './midi-import.js';
 import { parseChart, chartFromText, chartToText, spellInChord } from './chords.js';
 import { STYLES, generateBacking } from './band.js';
+import { defaultPatch, normalizePatch } from './synth.js';
+import { mountSynthPanel } from './synth-panel.js';
 import { buildPlan, BAND_IDS, hasChords } from './plan.js';
 
 const $ = (id) => document.getElementById(id);
@@ -15,7 +17,7 @@ const MAX_PARTS = 8;
 const PART_COLORS = ['#8a2f5e', '#1f7a72', '#b0661a', '#4a5bb8', '#5e7d24', '#a23b3b', '#6b4fa0', '#2f6f9a'];
 const SOUND_LABELS = {
   piano: 'Grand piano', epiano: 'Electric piano', guitar: 'Nylon guitar', organ: 'Organ', strings: 'Strings',
-  upright: 'Upright bass', ebass: 'Electric bass', pluck: 'Pluck synth', chip: 'Chiptune',
+  upright: 'Upright bass', ebass: 'Electric bass', pluck: 'Pluck synth', chip: 'Chiptune', synth: 'Synth (editable)',
 };
 const COMP_SOUNDS = ['piano', 'epiano', 'guitar', 'organ', 'strings', 'pluck', 'chip'];
 const BASS_SOUNDS = ['upright', 'ebass', 'pluck', 'piano'];
@@ -85,7 +87,7 @@ function saveDraft() {
   try {
     localStorage.setItem(DRAFT_KEY, JSON.stringify({
       ts: state.ts, bpm: +$('tempo').value, master: +$('master').value, active: state.active, band: state.band,
-      parts: state.parts.map((p) => ({ name: p.name, clef: p.clef, sound: p.sound, volume: p.volume, mute: p.mute, solo: p.solo, text: serialize(p.notes, state.ts) })),
+      parts: state.parts.map((p) => ({ name: p.name, clef: p.clef, sound: p.sound, volume: p.volume, mute: p.mute, solo: p.solo, patch: p.patch, text: serialize(p.notes, state.ts) })),
     }));
   } catch {}
 }
@@ -172,6 +174,7 @@ function addPart() {
 function removePart(pi) {
   if (state.parts.length <= 1) return;
   if (state.playing) stopPlayback();
+  if (state.parts[pi].id === synthEditing) { synthEditing = null; $('synthSection').hidden = true; }
   state.parts.splice(pi, 1);
   syncAudio();
   setActive(Math.min(state.active >= pi ? Math.max(0, state.active - 1) : state.active, state.parts.length - 1));
@@ -210,6 +213,7 @@ function renderParts() {
         <button class="ms${p.mute ? ' on' : ''}" type="button" data-act="mute" aria-pressed="${p.mute}" title="Mute">M</button>
         <button class="ms solo${p.solo ? ' on' : ''}" type="button" data-act="solo" aria-pressed="${p.solo}" title="Solo">S</button>
       </div>
+      ${p.sound === 'synth' ? `<button class="edit-sound${synthEditing === p.id ? ' on' : ''}" type="button" data-act="synth" aria-pressed="${synthEditing === p.id}">${synthEditing === p.id ? 'Editing sound' : 'Edit sound'}<span class="patch-name">${esc(p.patch?.name || '')}</span></button>` : ''}
     </article>`).join('') + (state.parts.length < MAX_PARTS
     ? `<button class="part add" id="addPart" type="button"><span class="plus" aria-hidden="true">+</span><span>Add part</span><span class="sub">Layer another instrument</span></button>`
     : '');
@@ -224,6 +228,7 @@ $('parts').addEventListener('click', (e) => {
   if (act === 'remove') { removePart(pi); return; }
   if (act === 'mute') { updatePart(pi, { mute: !state.parts[pi].mute }); renderParts(); return; }
   if (act === 'solo') { updatePart(pi, { solo: !state.parts[pi].solo }); renderParts(); return; }
+  if (act === 'synth') { openSynthEditor(synthEditing === state.parts[pi].id ? null : pi); return; }
   if (pi !== state.active && !e.target.matches('input, select')) setActive(pi);
 });
 $('parts').addEventListener('focusin', (e) => {
@@ -252,7 +257,13 @@ $('parts').addEventListener('change', (e) => {
   const card = e.target.closest('.part[data-pi]');
   if (!card) return;
   const pi = +card.dataset.pi;
-  if (e.target.dataset.act === 'sound') updatePart(pi, { sound: e.target.value });
+  if (e.target.dataset.act === 'sound') {
+    const fields = { sound: e.target.value };
+    if (e.target.value === 'synth' && !state.parts[pi].patch) fields.patch = defaultPatch();
+    updatePart(pi, fields);
+    if (e.target.value === 'synth') openSynthEditor(pi);
+    else { if (synthEditing === state.parts[pi].id) openSynthEditor(null); renderParts(); }
+  }
   if (e.target.dataset.act === 'clef') {
     updatePart(pi, { clef: e.target.value }, { rerender: true });
     if (pi === state.active) { state.octave = e.target.value === 'bass' ? 2 : 4; buildPiano(); }
@@ -455,6 +466,39 @@ function closeChordEditor() {
   editor = null;
 }
 
+// ---------- synth editor ----------
+let synthEditing = null; // id of the part whose patch is open
+let synthPanel = null;
+let synthSaveTimer;
+
+/** Open the patch editor for part index pi (null closes it). The edited part becomes the active one. */
+function openSynthEditor(pi) {
+  const p = pi === null ? null : state.parts[pi];
+  synthEditing = p ? p.id : null;
+  $('synthSection').hidden = !p;
+  if (p) {
+    if (!p.patch) p.patch = defaultPatch();
+    if (state.active !== pi) setActive(pi);
+    $('synthFor').textContent = p.name;
+    $('synthFor').style.setProperty('--pc', p.color);
+    const getPatch = () => state.parts.find((x) => x.id === synthEditing)?.patch || defaultPatch();
+    if (!synthPanel) {
+      synthPanel = mountSynthPanel($('synthPanel'), {
+        getPatch,
+        onChange: (patch, { structural }) => {
+          syncAudio();
+          if (structural) renderParts();
+          else document.querySelector('.part.is-active .patch-name')?.replaceChildren(patch.name);
+          clearTimeout(synthSaveTimer);
+          synthSaveTimer = setTimeout(saveDraft, 400);
+        },
+      });
+    } else synthPanel.refresh();
+  }
+  renderParts();
+}
+$('synthClose').addEventListener('click', () => openSynthEditor(null));
+
 // ---------- editing ----------
 let lastInsert = { idx: -1, at: 0, pi: -1 };
 
@@ -648,6 +692,8 @@ function snapshot() {
 /** Replace the whole piece. parts: [{ name, clef, sound, volume?, mute?, solo?, color?, notes }] */
 function applyPiece({ ts, bpm, parts, active = 0, band }) {
   stopPlayback();
+  synthEditing = null;
+  $('synthSection').hidden = true;
   setTimeSig(ts);
   if (band) { state.band = structuredClone(band); renderBand(); }
   if (bpm) { $('tempo').value = bpm; $('tempoVal').textContent = bpm; }
@@ -889,6 +935,7 @@ for (const p of source.parts) {
   state.parts.push(makePart({
     name: p.name, clef: p.clef || 'treble', sound: SOUND_LABELS[p.sound] ? p.sound : 'piano',
     volume: Number.isFinite(p.volume) ? p.volume : 0, mute: !!p.mute, solo: !!p.solo,
+    ...(p.patch || p.sound === 'synth' ? { patch: normalizePatch(p.patch) } : {}),
     notes: r.error ? [] : r.notes,
   }));
 }

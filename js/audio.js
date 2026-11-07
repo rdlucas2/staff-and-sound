@@ -1,3 +1,5 @@
+import { normalizePatch } from './synth.js';
+
 // Sound via Tone.js. Every part (and every backing-band instrument) gets its own instrument and
 // Tone.Channel (volume, mute, solo), all feeding a master volume -> reverb -> limiter chain.
 // The sampled grand piano (Salamander, CC BY 3.0) is loaded once and shared.
@@ -74,6 +76,138 @@ class Guitar {
   dispose() { this.voices.forEach((v) => { v.s.dispose(); v.g.dispose(); }); this.out.dispose(); }
 }
 
+/**
+ * User-editable synth (see synth.js for the patch model): two oscillator layers through a
+ * filter with its own envelope, then vibrato, tremolo, chorus, delay and reverb.
+ * setPatch() updates everything in place, so changes are heard while notes are playing.
+ */
+class SynthInstrument {
+  constructor(patch) {
+    const Tone = window.Tone;
+    this.out = new Tone.Gain(1);
+    this.reverb = new Tone.Reverb({ decay: 2.8, preDelay: 0.02, wet: 0 }).connect(this.out);
+    this.delay = new Tone.FeedbackDelay({ delayTime: 0.28, feedback: 0.32, wet: 0 }).connect(this.reverb);
+    this.chorus = new Tone.Chorus({ frequency: 1.3, delayTime: 3.5, depth: 0.7, spread: 160, wet: 0 }).connect(this.delay).start();
+    this.trem = new Tone.Tremolo({ frequency: 4, depth: 0, spread: 0 }).connect(this.chorus).start();
+    this.vib = new Tone.Vibrato({ frequency: 5, depth: 0 }).connect(this.trem);
+    this.level = new Tone.Volume(-10).connect(this.vib);
+    this.layers = [0, 1].map(() => ({ gain: new Tone.Gain(1).connect(this.level), synth: null, mono: null }));
+    this.held = [];   // mono mode: keys held, newest last
+    this.key = '';
+    this.lastT = 0;   // mono synths need strictly increasing start times
+    this.setPatch(patch);
+  }
+  connect(dest) { this.out.connect(dest); return this; }
+
+  layerOptions(idx) {
+    const p = this.patch;
+    const o = idx === 0 ? p.osc : p.osc2;
+    let oscillator;
+    if (o.type === 'pulse') oscillator = { type: 'pulse', width: p.osc.width };
+    else if (idx === 0 && p.osc.voices > 1) oscillator = { type: 'fat' + o.type, count: p.osc.voices, spread: p.osc.spread };
+    else oscillator = { type: o.type };
+    return {
+      oscillator,
+      detune: idx === 1 ? p.osc2.detune : 0,
+      envelope: { ...p.amp },
+      filter: { type: p.filter.type, Q: p.filter.q, rolloff: -24 },
+      filterEnvelope: {
+        baseFrequency: p.filter.cutoff, octaves: p.filter.env,
+        attack: p.filter.attack, decay: p.filter.decay, sustain: p.filter.sustain, release: p.filter.release,
+      },
+      portamento: p.mono ? p.glide : 0,
+    };
+  }
+
+  setPatch(raw) {
+    const Tone = window.Tone;
+    const p = normalizePatch(raw);
+    const key = JSON.stringify(p);
+    if (key === this.key) return;
+    const old = this.patch;
+    this.patch = p;
+    this.key = key;
+    this.shift = [12 * p.osc.octave + p.osc.semi, 12 * (p.osc.octave + p.osc2.octave) + p.osc.semi + p.osc2.semi];
+    this.layers.forEach((L, idx) => {
+      const opts = this.layerOptions(idx);
+      const typeChanged = old && ((old.osc.type === 'pulse') !== (p.osc.type === 'pulse') || (idx === 0 && (old.osc.voices > 1) !== (p.osc.voices > 1)));
+      if (!L.synth || L.mono !== p.mono || typeChanged) {
+        L.synth?.dispose();
+        L.synth = p.mono ? new Tone.MonoSynth(opts) : new Tone.PolySynth(Tone.MonoSynth, opts);
+        L.synth.connect(L.gain);
+        L.mono = p.mono;
+        this.held = [];
+      } else {
+        L.synth.set(opts);
+      }
+    });
+    const ramp = (param, v) => param.rampTo(v, 0.05);
+    ramp(this.layers[1].gain.gain, p.osc2.on ? p.osc2.level : 0);
+    ramp(this.level.volume, p.level);
+    ramp(this.vib.depth, p.lfo.vibDepth * 0.5);
+    ramp(this.vib.frequency, p.lfo.vibRate);
+    ramp(this.trem.depth, p.lfo.tremDepth);
+    ramp(this.trem.frequency, p.lfo.tremRate);
+    ramp(this.chorus.wet, p.fx.chorus);
+    ramp(this.delay.wet, p.fx.delay * 0.6);
+    ramp(this.reverb.wet, p.fx.reverb * 0.7);
+  }
+
+  freq(note, layer) { return window.Tone.Frequency(note).transpose(this.shift[layer]).toFrequency(); }
+  monoTime(time) {
+    let t = time ?? window.Tone.now();
+    if (t <= this.lastT) t = this.lastT + 0.002;
+    this.lastT = t;
+    return t;
+  }
+  active() { return this.patch.osc2.on ? [0, 1] : [0]; }
+
+  triggerAttackRelease(notes, dur, time, vel = 0.8) {
+    const list = [].concat(notes);
+    for (const i of this.active()) {
+      const L = this.layers[i];
+      if (L.mono) L.synth.triggerAttackRelease(this.freq(list[list.length - 1], i), dur, i === 0 ? this.monoTime(time) : this.lastT, vel);
+      else L.synth.triggerAttackRelease(list.map((n) => this.freq(n, i)), dur, time, vel);
+    }
+    return this;
+  }
+  triggerAttack(notes, time, vel = 0.8) {
+    const list = [].concat(notes);
+    if (this.patch.mono) {
+      for (const n of list) { this.held = this.held.filter((h) => h !== n); this.held.push(n); }
+      const top = this.held[this.held.length - 1];
+      const t = this.monoTime(time);
+      for (const i of this.active()) this.layers[i].synth.triggerAttack(this.freq(top, i), t, vel);
+      return this;
+    }
+    for (const i of this.active()) this.layers[i].synth.triggerAttack(list.map((n) => this.freq(n, i)), time, vel);
+    return this;
+  }
+  triggerRelease(notes, time) {
+    const list = [].concat(notes);
+    if (this.patch.mono) {
+      const wasTop = this.held[this.held.length - 1];
+      this.held = this.held.filter((h) => !list.includes(h));
+      const top = this.held[this.held.length - 1];
+      const t = this.monoTime(time);
+      if (!top) for (const i of [0, 1]) this.layers[i].synth.triggerRelease(t);
+      else if (top !== wasTop) for (const i of this.active()) this.layers[i].synth.triggerAttack(this.freq(top, i), t, 0.7);
+      return this;
+    }
+    for (const i of [0, 1]) this.layers[i].synth.triggerRelease(list.map((n) => this.freq(n, i)), time);
+    return this;
+  }
+  releaseAll() {
+    this.held = [];
+    for (const L of this.layers) { if (L.mono) L.synth.triggerRelease(); else L.synth.releaseAll(); }
+    return this;
+  }
+  dispose() {
+    this.layers.forEach((L) => { L.synth?.dispose(); L.gain.dispose(); });
+    [this.level, this.vib, this.trem, this.chorus, this.delay, this.reverb, this.out].forEach((n) => n.dispose());
+  }
+}
+
 /** Synthesized drum kit, played with General MIDI-style names. */
 class DrumKit {
   constructor() {
@@ -116,9 +250,11 @@ class DrumKit {
   dispose() { this.parts.forEach((p) => p.dispose()); this.out.dispose(); }
 }
 
-function build(kind) {
+function build(kind, part) {
   const Tone = window.Tone;
   switch (kind) {
+    case 'synth':
+      return new SynthInstrument(part?.patch);
     case 'piano': {
       const urls = {};
       for (const note of Object.keys(SAMPLE_URLS)) urls[note] = buffers.get(note);
@@ -197,8 +333,10 @@ function ensure(part) {
   const kind = part.sound === 'piano' && pianoState !== 'ready' ? 'pluck' : part.sound;
   if (c.kind !== kind) {
     c.inst?.dispose();
-    c.inst = build(kind).connect(c.channel);
+    c.inst = build(kind, part).connect(c.channel);
     c.kind = kind;
+  } else if (kind === 'synth') {
+    c.inst.setPatch(part.patch);
   }
   return c.inst;
 }
@@ -229,6 +367,10 @@ const noteName = (m) => window.Tone.Frequency(m, 'midi').toNote();
 export function preview(part, midis, vel = 0.7) { ensure(part).triggerAttackRelease(midis.map(noteName), 0.45, undefined, vel); }
 export function noteOn(part, m, vel = 0.8) { ensure(part).triggerAttack(noteName(m), undefined, vel); }
 export function noteOff(part, m) { ensure(part).triggerRelease(noteName(m)); }
+/** Release every note on a part's instrument (sustain off, panic). */
+export function releaseAll(part) { ensure(part).releaseAll?.(); }
+/** Hit one drum on a drum-kit part right now. */
+export function hit(part, drum, vel = 0.8) { ensure(part).hit?.(drum, undefined, vel); }
 
 /**
  * Play everything together.
