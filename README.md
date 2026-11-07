@@ -136,6 +136,10 @@ The script also writes `demos/examples.json` (the same files, base64-encoded), w
 - Each part holds a single line of notes or chords; a note that overlaps the next one is shortened.
 - Drum tracks are skipped, tempo changes are ignored, and imports stop at 8 parts and 64 bars.
 
+## Contributing
+
+Issues and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for how to run the project, how the code is organized, conventions and testing. Open work is tracked in [GitHub issues](https://github.com/rdlucas2/staff-and-sound/issues).
+
 ## Credits
 
 - Salamander Grand Piano V3 by Alexander Holm, [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/). Samples via [Tonejs/audio](https://github.com/Tonejs/audio).
