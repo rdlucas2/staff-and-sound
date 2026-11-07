@@ -1,29 +1,46 @@
 // MIDI file export (@tonejs/midi) and live MIDI keyboard input (Web MIDI API).
-import { toEvents } from './notation.js';
 import { makeZip } from './zip.js';
+import { GM_DRUMS } from './band.js';
 
 // General MIDI program numbers for each sound, so other software picks a similar instrument.
-const GM_PROGRAM = { piano: 0, organ: 16, chip: 80, pluck: 45, strings: 48 };
+export const GM_PROGRAM = { piano: 0, epiano: 4, organ: 16, guitar: 24, upright: 32, ebass: 33, pluck: 45, strings: 48, chip: 80 };
+const clamp = (v) => Math.max(0.05, Math.min(1, v));
 
-/** Build a Standard MIDI File (Uint8Array): one track per part, each on its own channel. */
-export function buildMidiFile(parts, { bpm, ts, name = 'Staff & Sound' }) {
+/**
+ * Build a Standard MIDI File (Uint8Array) from a playback plan (see plan.js):
+ * one track per part, plus the band's comping and bass, and drums on channel 10.
+ * Timing is as heard, so swung styles export swung. Muted band instruments are left out.
+ */
+export function buildMidiFile(plan, { bpm, ts, name = 'Staff & Sound' }) {
   const midi = new window.Midi();
   const [n, d] = ts.split('/').map(Number);
   midi.header.setTempo(bpm);
   midi.header.timeSignatures.push({ ticks: 0, timeSignature: [n, d] });
   midi.header.name = name;
   midi.header.update();
-  parts.forEach((part, pi) => {
+  let channel = 0;
+  for (const tr of plan.tracks) {
+    if (tr.key !== 'part' && tr.part.mute) continue;
     const track = midi.addTrack();
-    track.name = part.name;
-    track.channel = pi >= 9 ? pi + 1 : pi; // skip channel 10 (index 9), reserved for drums
-    track.instrument.number = GM_PROGRAM[part.sound] ?? 0;
-    const vel = Math.max(0.1, Math.min(1, 0.8 * Math.pow(10, part.volume / 40)));
-    const { events } = toEvents(part.notes, bpm);
-    for (const ev of events) {
-      for (const m of ev.midis) track.addNote({ midi: m, time: ev.t, duration: ev.dur * 0.98, velocity: vel });
+    track.name = tr.name;
+    const gain = Math.pow(10, (tr.part.volume || 0) / 40);
+    if (tr.key === 'drums') {
+      track.channel = 9; // General MIDI percussion
+      for (const ev of tr.events) {
+        const note = GM_DRUMS[ev.drum];
+        if (note) track.addNote({ midi: note, time: ev.t, duration: 0.1, velocity: clamp((ev.vel ?? 0.8) * gain) });
+      }
+      continue;
     }
-  });
+    if (channel === 9) channel++; // channel 10 is reserved for drums
+    track.channel = channel++ % 16;
+    track.instrument.number = GM_PROGRAM[tr.part.sound] ?? 0;
+    for (const ev of tr.events) {
+      for (const m of ev.midis || []) {
+        track.addNote({ midi: m, time: ev.t, duration: Math.max(0.03, ev.dur * 0.98), velocity: clamp((ev.vel ?? 0.8) * gain) });
+      }
+    }
+  }
   return midi.toArray();
 }
 

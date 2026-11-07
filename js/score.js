@@ -2,17 +2,22 @@
 // Bars line up vertically across parts: each bar index is formatted jointly for every staff,
 // with invisible ghost notes padding any part that is shorter in that bar.
 import { durQ, toMeasures, isTiedFrom } from './notation.js';
+import { prettyChord } from './chords.js';
 
 const NOTE_W = { w: 46, h: 40, q: 34, '8': 30, '16': 27, '32': 25 };
 const CLEF_W = 44, TS_W = 30, STAFF_H = 92, SYSTEM_GAP = 34, TOP = 6, LEFT = 4;
+const LANE = 14;          // extra room above each system for chord symbols
+const CHORD_W = 58;       // minimum width per chord symbol in a bar
+const SVGNS = 'http://www.w3.org/2000/svg';
 const PAD_DURS = [['w', 4], ['h', 2], ['q', 1], ['8', 0.5], ['16', 0.25], ['32', 0.125]];
 
 /**
  * parts: [{ id, name, clef, color, notes }]
- * opts: { ts, active (part index), onNoteClick(partIndex, noteIndex), onStaffClick(partIndex) }
- * Returns { noteEls: [[g per note] per part], bars }
+ * opts: { ts, active (part index), chart (parseChart result), minBars,
+ *         onNoteClick(partIndex, noteIndex), onStaffClick(partIndex), onChordClick(bar, rect) }
+ * Returns { noteEls: [[g per note] per part], chordEls: { 'bar:index': <text> }, bars, beats }
  */
-export function renderScore(el, parts, { ts, active = 0, onNoteClick, onStaffClick }) {
+export function renderScore(el, parts, { ts, active = 0, chart = null, minBars = 1, onNoteClick, onStaffClick, onChordClick }) {
   const VF = window.VexFlow;
   el.innerHTML = '';
   const W = Math.max(330, el.clientWidth || 600);
@@ -20,7 +25,8 @@ export function renderScore(el, parts, { ts, active = 0, onNoteClick, onStaffCli
   const LABEL_W = multi ? 74 : 0;
   const avail = W - LEFT * 2 - LABEL_W;
   const measures = parts.map((p) => toMeasures(p.notes, ts));
-  const M = Math.max(1, ...measures.map((m) => m.length));
+  const chartBars = chart?.bars || [];
+  const M = Math.max(1, minBars, chartBars.length, ...measures.map((m) => m.length));
 
   const naturalFor = (pi, mi) => {
     const idxs = measures[pi][mi];
@@ -31,7 +37,8 @@ export function renderScore(el, parts, { ts, active = 0, onNoteClick, onStaffCli
       return s + NOTE_W[n.dur] + (n.dots ? 8 : 0) + (n.keys.some((k) => k.acc) ? 12 : 0);
     }, 0);
   };
-  const natural = (mi) => Math.max(60, ...parts.map((_, pi) => naturalFor(pi, mi)));
+  const chordCount = (mi) => chartBars[mi]?.chords.length || 0;
+  const natural = (mi) => Math.max(measures.some((m) => m[mi]) ? 60 : 96, chordCount(mi) * CHORD_W + 16, ...parts.map((_, pi) => naturalFor(pi, mi)));
   const prefix = (lineNo, posInLine) => (posInLine === 0 ? CLEF_W : 0) + (lineNo === 0 && posInLine === 0 ? TS_W : 0);
 
   // Greedy line breaking over bar indexes.
@@ -45,7 +52,7 @@ export function renderScore(el, parts, { ts, active = 0, onNoteClick, onStaffCli
   }
   if (line.length) lines.push(line);
 
-  const systemH = parts.length * STAFF_H + SYSTEM_GAP;
+  const systemH = LANE + parts.length * STAFF_H + SYSTEM_GAP;
   const renderer = new VF.Renderer(el, VF.Renderer.Backends.SVG);
   renderer.resize(W, TOP + lines.length * systemH);
   const ctx = renderer.getContext();
@@ -55,10 +62,12 @@ export function renderScore(el, parts, { ts, active = 0, onNoteClick, onStaffCli
   const drawn = [];
   const placed = parts.map(() => []); // [part][noteIndex] -> { sn, line }
   const x0 = LEFT + LABEL_W;
+  const slots = []; // chord-lane click targets: { bar, x, y, w, h }
+  const chordPos = []; // { bar, k, x, y }
 
   lines.forEach((bars, li) => {
     const sysY = TOP + li * systemH;
-    const staffY = (pi) => sysY + pi * STAFF_H;
+    const staffY = (pi) => sysY + LANE + pi * STAFF_H;
 
     // Active-part band and clickable staff areas.
     parts.forEach((p, pi) => {
@@ -100,6 +109,14 @@ export function renderScore(el, parts, { ts, active = 0, onNoteClick, onStaffCli
       });
       VF.Stave.formatBegModifiers(staves);
       staves.forEach((st) => st.setContext(ctx).draw());
+
+      // Chord lane above the top staff.
+      const nsx = staves[0].getNoteStartX(), nex = staves[0].getNoteEndX();
+      slots.push({ bar: mi, x: x + 1, y: sysY + 4, w: w - 2, h: 30 });
+      (chartBars[mi]?.chords || []).forEach((c, k) => {
+        const frac = c.slot / num;
+        chordPos.push({ bar: mi, k, c, x: nsx + 4 + frac * (nex - nsx - 8), y: sysY + 30 });
+      });
 
       if (bi === 0) {
         if (multi) {
@@ -176,14 +193,61 @@ export function renderScore(el, parts, { ts, active = 0, onNoteClick, onStaffCli
     g.addEventListener('click', (e) => { e.stopPropagation(); onNoteClick?.(sn.__part, sn.__idx); });
   }
 
+  const svg = el.querySelector('svg');
+
+  // Chord slots go underneath everything (first in the SVG) so notes stay clickable.
+  const slotLayer = document.createElementNS(SVGNS, 'g');
+  slotLayer.setAttribute('class', 'chord-slots');
+  for (const sl of slots) {
+    const r = document.createElementNS(SVGNS, 'rect');
+    r.setAttribute('x', sl.x); r.setAttribute('y', sl.y); r.setAttribute('width', sl.w); r.setAttribute('height', sl.h);
+    r.setAttribute('rx', 4);
+    r.setAttribute('class', 'chord-slot' + (chordCount(sl.bar) ? '' : ' empty'));
+    const title = document.createElementNS(SVGNS, 'title');
+    title.textContent = `Bar ${sl.bar + 1}: click to type chords`;
+    r.appendChild(title);
+    r.addEventListener('click', (e) => { e.stopPropagation(); onChordClick?.(sl.bar, sl); });
+    slotLayer.appendChild(r);
+  }
+  svg?.insertBefore(slotLayer, svg.firstChild);
+
+  // Chord symbols: root large, quality raised and smaller.
+  const chordEls = {};
+  const textLayer = document.createElementNS(SVGNS, 'g');
+  textLayer.setAttribute('class', 'chord-syms');
+  for (const { bar, k, c, x, y } of chordPos) {
+    const pc = prettyChord(c.sym);
+    const t = document.createElementNS(SVGNS, 'text');
+    t.setAttribute('x', x); t.setAttribute('y', y);
+    t.setAttribute('class', 'chord-sym' + (c.bad ? ' bad' : '') + (c.repeat ? ' repeat' : ''));
+    const root = document.createElementNS(SVGNS, 'tspan');
+    root.textContent = pc.root;
+    t.appendChild(root);
+    if (pc.quality) {
+      const q = document.createElementNS(SVGNS, 'tspan');
+      q.setAttribute('class', 'q'); q.setAttribute('dy', '-5');
+      q.textContent = pc.quality;
+      t.appendChild(q);
+    }
+    if (pc.bass) {
+      const b = document.createElementNS(SVGNS, 'tspan');
+      b.setAttribute('class', 'b'); b.setAttribute('dy', pc.quality ? '5' : '0');
+      b.textContent = pc.bass;
+      t.appendChild(b);
+    }
+    textLayer.appendChild(t);
+    chordEls[`${bar}:${k}`] = t;
+  }
+  svg?.appendChild(textLayer);
+
   // Clicking empty space on a staff selects that part.
-  el.querySelector('svg')?.addEventListener('click', (e) => {
+  svg?.addEventListener('click', (e) => {
     const r = e.currentTarget.getBoundingClientRect();
     const y = e.clientY - r.top;
-    const inSystem = (y - TOP) % systemH;
+    const inSystem = (y - TOP - LANE) % systemH;
     const pi = Math.floor(inSystem / STAFF_H);
     if (pi >= 0 && pi < parts.length) onStaffClick?.(pi);
   });
 
-  return { noteEls, bars: M, beats: Math.max(0, ...parts.map((p) => p.notes.reduce((s, n) => s + durQ(n), 0))) };
+  return { noteEls, chordEls, slots, bars: M, beats: Math.max(0, ...parts.map((p) => p.notes.reduce((s, n) => s + durQ(n), 0))) };
 }

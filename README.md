@@ -3,11 +3,12 @@
 Write music on a staff and hear it played back, in the browser, with no build step.
 
 - **Engraving:** [VexFlow 5](https://github.com/vexflow/vexflow) draws the score as SVG, with beaming, accidentals and line wrapping handled automatically.
+- **Chords & band:** write chord symbols over the bars (click above a bar, or type a whole chart) and a backing band plays them: comping, bass and drums in jazz swing, bossa nova, jazz waltz, ballad, pop/rock or funk. A small, browser-only take on the Band-in-a-Box idea.
 - **Parts:** add up to 8 parts, each with its own staff, clef and instrument. Bars line up across staves and all parts play together.
 - **Sound:** [Tone.js](https://tonejs.github.io/) plays a sampled grand piano (Salamander), plus strings, organ, pluck and chiptune synths. Each part has volume, mute and solo; there's a master volume too.
 - **Input:** on-screen piano, computer keyboard, a MIDI keyboard (Web MIDI API), or a text notation.
 - **Import:** open any `.mid` file (picker or drag-and-drop) or one of the bundled examples. Each track becomes a part; rhythms snap to sixteenths, notes crossing a bar line are tied, and two-hand piano tracks split onto two staves. Undo restores what you had.
-- **Export:** saves a Standard MIDI File (`.mid`) via [@tonejs/midi](https://github.com/Tonejs/Midi), one track per part.
+- **Export:** saves a Standard MIDI File (`.mid`) via [@tonejs/midi](https://github.com/Tonejs/Midi): one track per part, the band's comping and bass, and drums on General MIDI channel 10.
 
 ## Run it
 
@@ -21,6 +22,42 @@ python3 -m http.server 8000
 Then open http://localhost:8000.
 
 To host it, any static host works (GitHub Pages, S3 + CloudFront, Netlify). Serve over HTTPS so Web MIDI is available.
+
+## Chords and the backing band
+
+Click just above any bar on the score to type its chords (`Tab` moves to the next bar, `Enter` finishes), or write the whole chart in the **Chords & band** box:
+
+```
+Dm7 G7 | Cmaj7 | % | Dm7b5 / G7b9 / | Cm6 | N.C. |
+```
+
+| Example | Meaning |
+| --- | --- |
+| `|` or a new line | next bar |
+| `Dm7 G7` | two chords share the bar evenly |
+| `Dm7 / / G7` | one slot per beat: three beats of Dm7, one of G7 |
+| `%` | repeat the previous bar |
+| `/` | hold the previous chord through this bar |
+| `N.C.` | no chord: comping and bass rest, drums keep going |
+
+Chord symbols cover the usual forms: `C`, `Cm`, `C7`, `Cmaj7` (`CΔ`, `CM7`), `Cm7`, `C-7`, `Cm7b5` (`Cø`), `Cdim7` (`C°7`), `Caug`, `C6`, `C69`, `C9`, `C11`, `C13`, `C7b9`, `C7#9`, `C7#11`, `C7b13`, `C7alt`, `Csus4`, `C7sus4`, `Cadd9`, `CmMaj7`, `C5`, and slash chords like `F/A`. Anything unrecognized is underlined in red and the previous chord carries on.
+
+**Styles** set the time signature, a suggested tempo and default instruments:
+
+| Style | Comping | Bass | Drums | Feel |
+| --- | --- | --- | --- | --- |
+| Jazz swing | Charleston-style piano, rootless voicings, anticipations | walking quarter notes with chromatic approaches | ride, hi-hat on 2 and 4, ghost notes | swung |
+| Bossa nova | nylon guitar, two-bar syncopated pattern | root and fifth | cross-stick bossa clave, shaker | straight |
+| Jazz waltz | piano in 3/4 | walking in three | ride in three | swung |
+| Ballad | sustained electric piano | half notes | soft hi-hat and cross-stick | straight |
+| Pop / rock | piano pulse or push rhythms, triad voicings | driving eighths | backbeat, fills every 8 bars | straight |
+| Funk | sixteenth-note electric-piano stabs | syncopated root, octave and seventh | sixteenth hats, ghost notes | straight |
+
+Voicings move by the smallest steps from chord to chord. Variation is seeded: **New variation** gives the same chart different rhythms and voicings, and the same seed always plays back the same way. In swing styles every part, including what you wrote, plays with swung eighths.
+
+**Write band to staff** turns the current comping and bass into editable parts (spelled by chord degree, so the 7th of C7 is B♭), and mutes their band versions so nothing doubles. The drums keep playing.
+
+All band sounds are synthesized with Tone.js (no samples beyond the piano): a Karplus-Strong nylon guitar, an FM electric piano, upright and electric basses, and a synth drum kit.
 
 ## Text notation
 
@@ -61,7 +98,10 @@ css/styles.css      styles (light and dark themes)
 js/main.js          UI state, editing, input handling, playback wiring
 js/notation.js      note model, text parser/serializer, bar splitting, timing
 js/score.js         VexFlow rendering: stacked staves per system, bars aligned across parts
-js/audio.js         Tone.js instruments, per-part channels (volume/mute/solo), layered playback
+js/audio.js         Tone.js instruments (incl. drum kit, guitar, e-piano, basses), channels, playback
+js/chords.js        chord symbol parser, chart parsing, chord-degree spelling
+js/band.js          backing band: styles, voicings, walking/pattern bass, drum patterns
+js/plan.js          merges parts and band into timed tracks for playback and export
 js/midi.js          MIDI file export and Web MIDI input
 js/midi-import.js   MIDI file -> parts (quantizing, chords, bar splitting with ties)
 js/zip.js           tiny store-only zip writer (used when .mid downloads are not allowed)
@@ -79,6 +119,12 @@ scripts/            build-demos.js regenerates demos/ from text notation
 - **Twinkle, Twinkle, Little Star** (traditional): melody and bass
 
 The script also writes `demos/examples.json` (the same files, base64-encoded), which is what the page loads, since some static hosts won't serve `.mid`. To change or add a piece, edit the script and run `npm install && npm run demos`.
+
+## Band limits
+
+- Six fixed styles; there's no style editor yet.
+- No count-in, intro or ending variations beyond a final chord.
+- MIDI export is timed as heard, so swung styles export swung eighths (re-importing quantizes them to sixteenths).
 
 ## Import limits
 

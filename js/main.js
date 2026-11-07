@@ -1,26 +1,51 @@
-// UI wiring: parts, editing, on-screen piano, computer keyboard, MIDI keyboard, playback.
-import { parse, serialize, midiOf, pitchStr, midiToKey, toEvents } from './notation.js';
+// UI wiring: parts, chords and band, editing, on-screen piano, computer keyboard, MIDI keyboard, playback.
+import { parse, serialize, midiOf, pitchStr, midiToKey, toEvents, capQ } from './notation.js';
 import { renderScore } from './score.js';
 import * as audio from './audio.js';
 import { buildMidiFile, saveMidi, connectMidiInput } from './midi.js';
-import { importMidi } from './midi-import.js';
+import { importMidi, notesFromRaw } from './midi-import.js';
+import { parseChart, chartFromText, chartToText, spellInChord } from './chords.js';
+import { STYLES, generateBacking } from './band.js';
+import { buildPlan, BAND_IDS, hasChords } from './plan.js';
 
 const $ = (id) => document.getElementById(id);
 const DRAFT_KEY = 'staff-and-sound:draft:v2';
 const OLD_DRAFT_KEY = 'staff-and-sound:draft';
 const MAX_PARTS = 8;
 const PART_COLORS = ['#8a2f5e', '#1f7a72', '#b0661a', '#4a5bb8', '#5e7d24', '#a23b3b', '#6b4fa0', '#2f6f9a'];
-const SOUND_LABELS = { piano: 'Grand piano', organ: 'Organ', strings: 'Strings', pluck: 'Pluck synth', chip: 'Chiptune' };
+const SOUND_LABELS = {
+  piano: 'Grand piano', epiano: 'Electric piano', guitar: 'Nylon guitar', organ: 'Organ', strings: 'Strings',
+  upright: 'Upright bass', ebass: 'Electric bass', pluck: 'Pluck synth', chip: 'Chiptune',
+};
+const COMP_SOUNDS = ['piano', 'epiano', 'guitar', 'organ', 'strings', 'pluck', 'chip'];
+const BASS_SOUNDS = ['upright', 'ebass', 'pluck', 'piano'];
+const BAND_COLORS = { comp: '#8c7a3e', bass: '#3f6b8c', drums: '#6f6a7a' };
+const PROGRESSIONS = [
+  { name: 'Jazz blues in F', style: 'swing', chart: 'F7 | Bb7 | F7 | Cm7 F7 | Bb7 | Bdim7 | F7 | D7alt | Gm7 | C7 | F7 D7 | Gm7 C7' },
+  { name: 'ii–V–I, major then minor', style: 'swing', chart: 'Dm7 | G7 | Cmaj7 | % | Dm7b5 | G7b9 | Cm6 | %' },
+  { name: 'Rhythm changes, A section', style: 'swing', chart: 'Bb6 G7 | Cm7 F7 | Dm7 G7 | Cm7 F7 | Fm7 Bb7 | Ebmaj7 Ab7 | Dm7 G7 | Cm7 F7' },
+  { name: 'Bossa in D minor', style: 'bossa', chart: 'Dm9 | % | Em7b5 | A7b9 | Dm9 | % | Gm9 | C9 | Fmaj7 | Bbmaj7 | Em7b5 | A7b9 | Dm9 | % | Em7b5 A7b9 | Dm9' },
+  { name: 'Jazz waltz in F', style: 'waltz', chart: 'Fmaj7 | Gm7 C7 | Am7 | D7b9 | Gm7 | C7 | Fmaj7 | Gm7 C7' },
+  { name: 'Ballad in E♭', style: 'ballad', chart: 'Ebmaj7 | Cm7 | Fm7 | Bb7sus4 Bb7 | Gm7 | C7 | Fm7 | Bb7' },
+  { name: 'Pop: I–V–vi–IV', style: 'pop', chart: 'C | G | Am | F | C | G | Am | F' },
+  { name: 'Funk vamp in E', style: 'funk', chart: 'E7#9 | % | % | % | A9 | % | E7#9 | %' },
+];
 const SOUND_CYCLE = ['piano', 'strings', 'organ', 'pluck', 'chip'];
 let EXAMPLES = []; // loaded from demos/examples.json
 
-// Theme from Beethoven's Ninth (public domain), with a simple bass line underneath.
+// Theme from Beethoven's Ninth (public domain), with chords for the band.
 const SAMPLE_PARTS = [
   { name: 'Melody', clef: 'treble', sound: 'piano', volume: 0,
     text: 'E4/q E4 F4 G4 | G4 F4 E4 D4 | C4 C4 D4 E4 | E4/q. D4/8 D4/h | E4/q E4 F4 G4 | G4 F4 E4 D4 | C4 C4 D4 E4 | D4/q. C4/8 C4/h' },
-  { name: 'Bass', clef: 'bass', sound: 'strings', volume: -4,
-    text: 'C3/h E3 | G2/h B2 | C3/h E3 | G2/h G2 | C3/h E3 | G2/h B2 | C3/h A2 | G2/h (C3 G3)/h' },
 ];
+const SAMPLE_CHART = ['C', 'G', 'C', 'G', 'C', 'G7', 'C Am', 'G7 C'];
+
+const defaultBand = () => ({
+  on: true, style: 'pop', seed: 1, chart: [],
+  comp: { sound: STYLES.pop.comp, volume: -4, mute: false },
+  bass: { sound: STYLES.pop.bass, volume: -2, mute: false },
+  drums: { volume: -6, mute: false },
+});
 
 let nextId = 1;
 const state = {
@@ -31,8 +56,11 @@ const state = {
   octave: 4,
   ts: '4/4',
   playing: false,
+  band: defaultBand(),
 };
 let noteEls = [];
+let chordEls = {};
+let slots = [];
 const part = () => state.parts[state.active];
 
 function makePart(fields = {}) {
@@ -44,11 +72,19 @@ function makePart(fields = {}) {
   };
 }
 
+const bandChannels = () => [
+  { id: BAND_IDS.comp, solo: false, ...state.band.comp },
+  { id: BAND_IDS.bass, solo: false, ...state.band.bass },
+  { id: BAND_IDS.drums, solo: false, sound: 'drums', ...state.band.drums },
+];
+/** Keep audio channels in line with parts and band instruments. */
+const syncAudio = () => audio.syncParts([...state.parts, ...bandChannels()]);
+
 // ---------- persistence (per-browser draft) ----------
 function saveDraft() {
   try {
     localStorage.setItem(DRAFT_KEY, JSON.stringify({
-      ts: state.ts, bpm: +$('tempo').value, master: +$('master').value, active: state.active,
+      ts: state.ts, bpm: +$('tempo').value, master: +$('master').value, active: state.active, band: state.band,
       parts: state.parts.map((p) => ({ name: p.name, clef: p.clef, sound: p.sound, volume: p.volume, mute: p.mute, solo: p.solo, text: serialize(p.notes, state.ts) })),
     }));
   } catch {}
@@ -64,10 +100,20 @@ function loadDraft() {
 }
 
 // ---------- render ----------
+function chartParsed() {
+  const [num, den] = state.ts.split('/').map(Number);
+  return parseChart(state.band.chart, num, 4 / den);
+}
+
 function render() {
+  closeChordEditor();
+  const empty = !state.parts.some((p) => p.notes.length) && !state.band.chart.length;
   const r = renderScore($('score'), state.parts, {
     ts: state.ts,
     active: state.active,
+    chart: chartParsed(),
+    minBars: Math.max(empty ? 4 : 1, extraBars),
+    onChordClick: (bar) => openChordEditor(bar),
     onNoteClick: (pi, i) => {
       if (pi !== state.active) { setActive(pi, i); return; }
       select(i === state.selected ? -1 : i);
@@ -75,6 +121,8 @@ function render() {
     onStaffClick: (pi) => { if (pi !== state.active) setActive(pi); else select(-1); },
   });
   noteEls = r.noteEls;
+  chordEls = r.chordEls;
+  slots = r.slots;
   paintSelection();
   const total = state.parts.reduce((s, p) => s + p.notes.length, 0);
   const [, den] = state.ts.split('/').map(Number);
@@ -82,7 +130,7 @@ function render() {
   const nParts = state.parts.length;
   $('metaLeft').textContent = total
     ? `${nParts} part${nParts === 1 ? '' : 's'} · ${total} notes · ${r.bars} bar${r.bars === 1 ? '' : 's'} · ${Number.isInteger(beats) ? beats : beats.toFixed(2)} beats`
-    : 'Empty staff: play a key to add a note';
+    : 'Empty staff: play a key to add a note, or click above a bar to add chords';
 }
 function paintSelection() {
   noteEls.forEach((els, pi) => els.forEach((g, i) => g && g.classList.toggle('is-selected', pi === state.active && i === state.selected)));
@@ -117,7 +165,7 @@ function addPart() {
   if (state.parts.length >= MAX_PARTS) return;
   const sound = SOUND_CYCLE[state.parts.length % SOUND_CYCLE.length];
   state.parts.push(makePart({ sound }));
-  audio.syncParts(state.parts);
+  syncAudio();
   setActive(state.parts.length - 1);
 }
 
@@ -125,13 +173,13 @@ function removePart(pi) {
   if (state.parts.length <= 1) return;
   if (state.playing) stopPlayback();
   state.parts.splice(pi, 1);
-  audio.syncParts(state.parts);
+  syncAudio();
   setActive(Math.min(state.active >= pi ? Math.max(0, state.active - 1) : state.active, state.parts.length - 1));
 }
 
 function updatePart(pi, fields, { rerender = false } = {}) {
   Object.assign(state.parts[pi], fields);
-  audio.syncParts(state.parts);
+  syncAudio();
   if (rerender) { renderParts(); commit({ keepText: pi !== state.active }); if (pi === state.active) buildPiano(); }
   else saveDraft();
 }
@@ -210,6 +258,202 @@ $('parts').addEventListener('change', (e) => {
     if (pi === state.active) { state.octave = e.target.value === 'bass' ? 2 : 4; buildPiano(); }
   }
 });
+
+// ---------- chords & band ----------
+const band = () => state.band;
+
+function chartMessage() {
+  const { errors } = chartParsed();
+  if (!errors.length) { $('chartMsg').textContent = ''; $('chartMsg').classList.remove('bad'); return; }
+  const list = errors.slice(0, 3).map((e) => `“${e.token}” (bar ${e.bar + 1})`).join(', ');
+  $('chartMsg').textContent = `Don't recognize ${list}${errors.length > 3 ? ' and more' : ''}. Try forms like Cmaj7, Dm7b5, G7#9, F/A or Bb6.`;
+  $('chartMsg').classList.add('bad');
+}
+
+function syncChartText() {
+  if (document.activeElement !== $('chart')) $('chart').value = chartToText(band().chart);
+  chartMessage();
+}
+
+function setChart(bars) {
+  while (bars.length && !bars[bars.length - 1].trim()) bars.pop();
+  band().chart = bars;
+  syncChartText();
+  render();
+  saveDraft();
+}
+
+function bandTrackCard(key, label, sounds) {
+  const t = band()[key];
+  const sel = sounds
+    ? `<select id="bsound-${key}" data-bact="sound" aria-label="${label} sound">${sounds.map((v) => `<option value="${v}"${v === t.sound ? ' selected' : ''}>${SOUND_LABELS[v]}</option>`).join('')}</select>`
+    : '<span class="band-sub">Drum kit</span>';
+  return `<article class="part band-track" data-band="${key}" style="--pc:${BAND_COLORS[key]}" aria-label="${label}">
+    <div class="part-head"><span class="chip" aria-hidden="true"></span><span class="band-name">${label}</span></div>
+    <div class="part-row">${sel}</div>
+    <div class="part-row">
+      <input type="range" id="bvol-${key}" data-bact="volume" min="-30" max="6" step="1" value="${t.volume}" aria-label="${label} volume">
+      <span class="db">${t.volume > 0 ? '+' : ''}${t.volume} dB</span>
+      <button class="ms${t.mute ? ' on' : ''}" type="button" data-bact="mute" aria-pressed="${t.mute}" title="Mute">M</button>
+    </div>
+  </article>`;
+}
+
+function renderBand() {
+  const b = band();
+  $('bandStyle').value = b.style;
+  $('bandOn').checked = b.on;
+  $('styleDesc').textContent = STYLES[b.style].desc;
+  $('bandTracks').innerHTML = bandTrackCard('comp', 'Comping', COMP_SOUNDS) + bandTrackCard('bass', 'Bass', BASS_SOUNDS) + bandTrackCard('drums', 'Drums', null);
+  $('bandTracks').classList.toggle('off', !b.on);
+  syncChartText();
+}
+
+function setStyle(key) {
+  const st = STYLES[key];
+  const b = band();
+  b.style = key;
+  b.comp.sound = st.comp;
+  b.bass.sound = st.bass;
+  $('tempo').value = st.tempo;
+  $('tempoVal').textContent = st.tempo;
+  const tsChanged = st.ts !== state.ts;
+  if (tsChanged) setTimeSig(st.ts);
+  renderBand();
+  syncAudio();
+  commit();
+  setStatus('importStatus', `${st.name}: ${st.tempo} bpm${tsChanged ? `, time signature changed to ${st.ts}` : ''}.`, 'ok');
+}
+
+$('bandStyle').innerHTML = Object.entries(STYLES).map(([k, st]) => `<option value="${k}">${st.name}</option>`).join('');
+$('progression').innerHTML = '<option value="">Load a progression…</option>' + PROGRESSIONS.map((p, i) => `<option value="${i}">${esc(p.name)} · ${STYLES[p.style].name}</option>`).join('');
+
+$('bandStyle').addEventListener('change', (e) => { stopPlayback(); setUndo(); setStyle(e.target.value); });
+$('bandOn').addEventListener('change', (e) => { band().on = e.target.checked; renderBand(); saveDraft(); });
+$('bandVary').addEventListener('click', () => {
+  band().seed = (band().seed % 9973) + 1;
+  saveDraft();
+  setStatus('importStatus', `Band variation ${band().seed}. Play to hear it.`, 'ok');
+});
+$('progression').addEventListener('change', (e) => {
+  const p = PROGRESSIONS[+e.target.value];
+  e.target.value = '';
+  if (!p) return;
+  stopPlayback();
+  setUndo();
+  band().chart = chartFromText(p.chart);
+  band().on = true;
+  setStyle(p.style);
+  syncChartText();
+  setStatus('importStatus', `Loaded “${p.name}” (${STYLES[p.style].name}, ${band().chart.length} bars).`, 'ok');
+});
+$('chart').addEventListener('input', (e) => {
+  band().chart = chartFromText(e.target.value);
+  chartMessage();
+  render();
+  saveDraft();
+});
+$('chart').addEventListener('blur', () => syncChartText());
+
+$('bandTracks').addEventListener('input', (e) => {
+  const card = e.target.closest('[data-band]');
+  if (!card || e.target.dataset.bact !== 'volume') return;
+  const v = +e.target.value;
+  band()[card.dataset.band].volume = v;
+  card.querySelector('.db').textContent = `${v > 0 ? '+' : ''}${v} dB`;
+  syncAudio();
+  saveDraft();
+});
+$('bandTracks').addEventListener('change', (e) => {
+  const card = e.target.closest('[data-band]');
+  if (!card || e.target.dataset.bact !== 'sound') return;
+  band()[card.dataset.band].sound = e.target.value;
+  syncAudio();
+  saveDraft();
+});
+$('bandTracks').addEventListener('click', (e) => {
+  const card = e.target.closest('[data-band]');
+  if (!card || e.target.dataset.bact !== 'mute') return;
+  const t = band()[card.dataset.band];
+  t.mute = !t.mute;
+  syncAudio();
+  renderBand();
+  saveDraft();
+});
+
+/** Turn the band's comping and bass into editable parts. */
+function writeBandToStaff() {
+  if (!hasChords(band())) { setStatus('importStatus', 'Add some chords first.', 'warn'); return; }
+  if (state.parts.length + 2 > MAX_PARTS) { setStatus('importStatus', `There's only room for ${MAX_PARTS} parts. Remove a part first.`, 'warn'); return; }
+  const g = generateBacking({ bars: band().chart, ts: state.ts, style: band().style, seed: band().seed, ending: true });
+  const barLen = Math.round(capQ(state.ts) * 4);
+  const maxLen = barLen * band().chart.length;
+  const toRaw = (list) => list.flatMap((e) => e.midis.map((m) => {
+    const start = Math.round(e.q * 4);
+    return { start, end: Math.max(start + 1, Math.round((e.q + e.dur) * 4)), midi: m, spell: e.spell, key: e.chord ? spellInChord(m, e.chord) : null };
+  }));
+  const st = STYLES[band().style];
+  setUndo();
+  stopPlayback();
+  state.parts.push(
+    makePart({ name: `${SOUND_LABELS[band().comp.sound]} (${st.name})`.slice(0, 24), clef: 'treble', sound: band().comp.sound, volume: band().comp.volume, notes: notesFromRaw(toRaw(g.comp), barLen, maxLen) }),
+    makePart({ name: 'Bass line', clef: 'bass', sound: band().bass.sound, volume: band().bass.volume, notes: notesFromRaw(toRaw(g.bass), barLen, maxLen) }),
+  );
+  band().comp.mute = true;
+  band().bass.mute = true;
+  syncAudio();
+  renderBand();
+  renderParts();
+  commit();
+  setStatus('importStatus', 'Added the band\'s comping and bass as parts you can edit. Their band versions are muted so they don\'t double; the drums keep playing.', 'ok');
+}
+$('bandWrite').addEventListener('click', writeBandToStaff);
+
+// In-place chord editor over a bar.
+let editor = null;
+let extraBars = 0;
+function openChordEditor(bar) {
+  closeChordEditor();
+  const slot = slots.find((s) => s.bar === bar);
+  if (!slot) return;
+  const input = document.createElement('input');
+  input.className = 'chord-input';
+  input.id = 'chordInput';
+  input.value = band().chart[bar] || '';
+  input.placeholder = 'e.g. Dm7 G7';
+  input.setAttribute('aria-label', `Chords for bar ${bar + 1}`);
+  input.spellcheck = false;
+  Object.assign(input.style, { left: `${slot.x}px`, top: `${slot.y}px`, width: `${Math.max(slot.w, 120)}px` });
+  $('score').appendChild(input);
+  const ed = { bar, input, done: false };
+  editor = ed;
+  const finish = (move) => {
+    if (ed.done) return;
+    ed.done = true;
+    if (editor === ed) editor = null;
+    const chart = [...band().chart];
+    while (chart.length <= bar) chart.push('');
+    chart[bar] = input.value.trim();
+    const target = Math.max(0, bar + move);
+    extraBars = move ? target + 1 : 0; // keep the next bar on screen while tabbing past the end
+    setChart(chart);
+    if (move) openChordEditor(target);
+  };
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); finish(0); }
+    else if (e.key === 'Tab') { e.preventDefault(); finish(e.shiftKey ? -1 : 1); }
+    else if (e.key === 'Escape') { e.preventDefault(); ed.done = true; editor = null; extraBars = 0; input.remove(); }
+  });
+  input.addEventListener('blur', () => finish(0));
+  input.focus();
+  input.select();
+}
+function closeChordEditor() {
+  if (!editor) return;
+  editor.done = true;
+  editor.input.remove();
+  editor = null;
+}
 
 // ---------- editing ----------
 let lastInsert = { idx: -1, at: 0, pi: -1 };
@@ -340,37 +584,47 @@ function flashKey(m, on) { keyElsByMidi.get(m)?.classList.toggle('down', on); }
 let lit = [];
 function clearLit() { lit.forEach((i, pi) => noteEls[pi]?.[i]?.classList.remove('is-playing')); lit = []; }
 
+let litChord = null;
+function lightChord(key) {
+  litChord?.classList.remove('is-playing');
+  litChord = key ? chordEls[key] || null : null;
+  litChord?.classList.add('is-playing');
+}
+
+function currentPlan({ fromQ = 0, ending = true } = {}) {
+  return buildPlan({ parts: state.parts, band: state.band, ts: state.ts, bpm: +$('tempo').value, fromQ, ending });
+}
+
 async function startPlayback() {
-  if (!state.parts.some((p) => p.notes.length)) return;
+  const bandOn = state.band.on && hasChords(state.band);
+  if (!state.parts.some((p) => p.notes.length) && !bandOn) return;
   await audio.unlock();
-  const bpm = +$('tempo').value;
-  // Start from the selected note's time position, applied to every part.
-  let offset = 0;
-  if (state.selected >= 0) {
-    const ev = toEvents(part().notes, bpm).events[state.selected];
-    offset = ev ? ev.t : 0;
-  }
-  const tracks = state.parts.map((p) => {
-    const { events, total } = toEvents(p.notes, bpm);
-    const evs = events.filter((e) => e.t >= offset - 1e-6).map((e) => ({ ...e, t: e.t - offset }));
-    return { part: p, events: evs, total: Math.max(0, total - offset) };
-  });
+  // Start from the selected note's time position, applied to every part and the band.
+  let fromQ = 0;
+  if (state.selected >= 0) fromQ = toEvents(part().notes, 120).events[state.selected]?.q ?? 0;
+  const loop = $('loop').checked;
+  const plan = currentPlan({ fromQ, ending: !loop });
   clearLit();
+  lightChord(null);
   state.playing = true;
   setPlayUI(true);
-  audio.play(tracks, {
-    loop: $('loop').checked,
+  audio.play(plan.tracks, {
+    total: plan.total,
+    marks: plan.marks,
+    loop,
     onStep: (pi, i) => {
       const prev = lit[pi];
       if (prev !== undefined) noteEls[pi]?.[prev]?.classList.remove('is-playing');
       if (i >= 0) { noteEls[pi]?.[i]?.classList.add('is-playing'); lit[pi] = i; } else delete lit[pi];
     },
-    onEnd: () => { clearLit(); state.playing = false; setPlayUI(false); },
+    onMark: lightChord,
+    onEnd: () => { clearLit(); lightChord(null); state.playing = false; setPlayUI(false); },
   });
 }
 function stopPlayback() {
   audio.stop();
   clearLit();
+  lightChord(null);
   state.playing = false;
   setPlayUI(false);
 }
@@ -386,22 +640,23 @@ let undoSnapshot = null;
 
 function snapshot() {
   return structuredClone({
-    ts: state.ts, bpm: +$('tempo').value, active: state.active,
+    ts: state.ts, bpm: +$('tempo').value, active: state.active, band: state.band,
     parts: state.parts.map(({ id, ...rest }) => rest),
   });
 }
 
 /** Replace the whole piece. parts: [{ name, clef, sound, volume?, mute?, solo?, color?, notes }] */
-function applyPiece({ ts, bpm, parts, active = 0 }) {
+function applyPiece({ ts, bpm, parts, active = 0, band }) {
   stopPlayback();
   setTimeSig(ts);
+  if (band) { state.band = structuredClone(band); renderBand(); }
   if (bpm) { $('tempo').value = bpm; $('tempoVal').textContent = bpm; }
   state.parts = [];
   for (const p of parts) {
     const { color, ...rest } = p;
     state.parts.push(makePart({ volume: 0, mute: false, solo: false, ...rest, ...(color ? { color } : {}) }));
   }
-  audio.syncParts(state.parts);
+  syncAudio();
   state.active = Math.min(active, state.parts.length - 1);
   state.selected = -1;
   state.octave = part().clef === 'bass' ? 2 : 4;
@@ -423,11 +678,10 @@ async function loadMidi(buffer, label) {
     $('undoImport').hidden = true;
     return;
   }
-  undoSnapshot = snapshot();
+  setUndo();
   applyPiece({ ts: r.ts, bpm: r.bpm, parts: r.parts });
   const extra = r.notes.length ? ` ${r.notes.join('. ')}.` : '';
   setStatus('importStatus', `Opened “${label}”: ${r.parts.length} part${r.parts.length === 1 ? '' : 's'}, ${r.ts} at ${r.bpm} bpm.${extra}`, 'ok');
-  $('undoImport').hidden = false;
 }
 
 function loadExample(ex) {
@@ -464,12 +718,13 @@ $('examples').addEventListener('click', (e) => {
   if (b) loadExample(EXAMPLES[+b.dataset.ex]);
 });
 $('importFile').addEventListener('change', async (e) => { await loadFile(e.target.files[0]); e.target.value = ''; });
+function setUndo() { undoSnapshot = snapshot(); $('undoImport').hidden = false; }
 $('undoImport').addEventListener('click', () => {
   if (!undoSnapshot) return;
   applyPiece(undoSnapshot);
   undoSnapshot = null;
   $('undoImport').hidden = true;
-  setStatus('importStatus', 'Import undone.', 'ok');
+  setStatus('importStatus', 'Undone.', 'ok');
 });
 
 // Drag a .mid file anywhere onto the page.
@@ -488,11 +743,12 @@ document.addEventListener('drop', (e) => {
 
 // ---------- MIDI ----------
 async function exportMidi() {
-  if (!state.parts.some((p) => p.notes.length)) { setStatus('exportStatus', 'Add some notes first.', 'warn'); return; }
+  if (!state.parts.some((p) => p.notes.length) && !(state.band.on && hasChords(state.band))) { setStatus('exportStatus', 'Add some notes or chords first.', 'warn'); return; }
   try {
-    const bytes = buildMidiFile(state.parts, { bpm: +$('tempo').value, ts: state.ts });
+    const plan = currentPlan();
+    const bytes = buildMidiFile(plan, { bpm: +$('tempo').value, ts: state.ts });
     const kind = await saveMidi(bytes);
-    const n = state.parts.length;
+    const n = plan.tracks.filter((t) => t.key === 'part' || !t.part.mute).length;
     setStatus('exportStatus', `${kind === 'zip' ? 'Saved a .zip with the .mid inside' : 'Saved staff-and-sound.mid'} (${n} track${n === 1 ? '' : 's'}).`, 'ok');
   } catch (e) {
     setStatus('exportStatus', e.message, 'warn');
@@ -587,7 +843,16 @@ document.addEventListener('keydown', (e) => {
 
 // ---------- boot ----------
 const draft = loadDraft();
-const source = draft?.parts?.length ? draft : { ts: '4/4', parts: SAMPLE_PARTS };
+const source = draft?.parts?.length ? draft : { ts: '4/4', parts: SAMPLE_PARTS, band: { ...defaultBand(), chart: SAMPLE_CHART } };
+if (source.band) {
+  const d = defaultBand(), b = source.band;
+  state.band = {
+    ...d, ...b,
+    style: STYLES[b.style] ? b.style : d.style,
+    chart: Array.isArray(b.chart) ? b.chart.map(String) : [],
+    comp: { ...d.comp, ...b.comp }, bass: { ...d.bass, ...b.bass }, drums: { ...d.drums, ...b.drums },
+  };
+}
 state.ts = source.ts || '4/4';
 for (const p of source.parts) {
   const r = parse(p.text || '');
@@ -606,14 +871,15 @@ state.octave = part().clef === 'bass' ? 2 : 4;
 audio.loadPiano((s) => {
   const label = { loading: 'Loading piano samples…', ready: 'Piano ready', error: 'Piano samples failed to load; piano parts use a synth' }[s];
   setStatus('soundStatus', label, s === 'ready' ? 'ok' : s === 'error' ? 'warn' : '');
-  if (s !== 'loading') audio.syncParts(state.parts);
+  if (s !== 'loading') syncAudio();
 });
-audio.syncParts(state.parts);
+syncAudio();
 audio.setMasterVolume(+$('master').value);
 
 setDur('q');
 buildPiano();
 renderParts();
+renderBand();
 commit();
 if (!navigator.requestMIDIAccess) setStatus('midiStatus', 'No Web MIDI in this browser', 'warn');
 

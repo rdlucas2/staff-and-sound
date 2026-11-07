@@ -1,6 +1,6 @@
-// Sound via Tone.js. Every part gets its own instrument and Tone.Channel (volume, mute, solo),
-// all feeding a master volume -> reverb -> limiter chain. The sampled grand piano
-// (Salamander, CC BY 3.0) is loaded once and shared by every piano part.
+// Sound via Tone.js. Every part (and every backing-band instrument) gets its own instrument and
+// Tone.Channel (volume, mute, solo), all feeding a master volume -> reverb -> limiter chain.
+// The sampled grand piano (Salamander, CC BY 3.0) is loaded once and shared.
 
 const SAMPLE_BASE = 'samples/salamander/';
 const SAMPLE_URLS = (() => {
@@ -17,7 +17,7 @@ const SAMPLE_URLS = (() => {
 let masterVol = null;
 let buffers = null;
 let pianoState = 'loading';
-const channels = new Map();  // partId -> { channel, inst, kind }
+const channels = new Map(); // id -> { channel, inst, kind }
 let tonePart = null;
 
 function master() {
@@ -41,6 +41,81 @@ export function loadPiano(onState) {
   });
 }
 
+// ---------- custom instruments ----------
+
+/** Nylon-string guitar: a pool of Karplus-Strong plucked strings, strummed slightly. */
+class Guitar {
+  constructor() {
+    const Tone = window.Tone;
+    this.out = new Tone.Gain(1.3);
+    const tone = new Tone.Filter({ type: 'lowpass', frequency: 3800, Q: 0.3 }).connect(this.out);
+    this.voices = Array.from({ length: 10 }, () => {
+      const g = new Tone.Gain(0.7).connect(tone);
+      const s = new Tone.PluckSynth({ attackNoise: 1.2, dampening: 3400, resonance: 0.96, release: 0.6 }).connect(g);
+      return { g, s };
+    });
+    this.next = 0;
+  }
+  connect(dest) { this.out.connect(dest); return this; }
+  triggerAttackRelease(notes, dur, time, vel = 0.8) {
+    const Tone = window.Tone;
+    const t0 = time ?? Tone.now();
+    [].concat(notes).forEach((n, k) => {
+      const v = this.voices[this.next++ % this.voices.length];
+      const t = t0 + k * 0.012;
+      v.g.gain.setValueAtTime(0.25 + vel * 0.75, t);
+      v.s.triggerAttackRelease(n, Math.max(0.05, dur), t);
+    });
+    return this;
+  }
+  triggerAttack(notes, time, vel) { return this.triggerAttackRelease(notes, 1.5, time, vel); }
+  triggerRelease() { return this; }
+  releaseAll() { return this; }
+  dispose() { this.voices.forEach((v) => { v.s.dispose(); v.g.dispose(); }); this.out.dispose(); }
+}
+
+/** Synthesized drum kit, played with General MIDI-style names. */
+class DrumKit {
+  constructor() {
+    const Tone = window.Tone;
+    this.out = new Tone.Gain(1);
+    const o = this.out;
+    this.kick = new Tone.MembraneSynth({ pitchDecay: 0.045, octaves: 6, envelope: { attack: 0.001, decay: 0.38, sustain: 0, release: 0.1 }, volume: 2 }).connect(o);
+    const snareHp = new Tone.Filter({ type: 'highpass', frequency: 1400 }).connect(o);
+    this.snare = new Tone.NoiseSynth({ noise: { type: 'white' }, envelope: { attack: 0.001, decay: 0.17, sustain: 0, release: 0.03 }, volume: -8 }).connect(snareHp);
+    this.snareBody = new Tone.MembraneSynth({ pitchDecay: 0.02, octaves: 2, envelope: { attack: 0.001, decay: 0.11, sustain: 0, release: 0.02 }, volume: -10 }).connect(o);
+    this.rim = new Tone.MembraneSynth({ pitchDecay: 0.006, octaves: 1.5, envelope: { attack: 0.001, decay: 0.055, sustain: 0, release: 0.02 }, volume: -2 }).connect(o);
+    const hatHp = new Tone.Filter({ type: 'highpass', frequency: 7500 }).connect(o);
+    this.hat = new Tone.NoiseSynth({ noise: { type: 'white' }, envelope: { attack: 0.001, decay: 0.05, sustain: 0, release: 0.02 }, volume: -9 }).connect(hatHp);
+    this.ride = new Tone.MetalSynth({ envelope: { attack: 0.001, decay: 1.1, release: 0.3 }, harmonicity: 5.1, modulationIndex: 18, resonance: 5200, octaves: 1.1, volume: -17 }).connect(o);
+    const crashHp = new Tone.Filter({ type: 'highpass', frequency: 3500 }).connect(o);
+    this.crash = new Tone.NoiseSynth({ noise: { type: 'white' }, envelope: { attack: 0.002, decay: 1.5, sustain: 0, release: 0.2 }, volume: -16 }).connect(crashHp);
+    const shakerBp = new Tone.Filter({ type: 'bandpass', frequency: 6200, Q: 0.9 }).connect(o);
+    this.shaker = new Tone.NoiseSynth({ noise: { type: 'white' }, envelope: { attack: 0.008, decay: 0.07, sustain: 0, release: 0.02 }, volume: -12 }).connect(shakerBp);
+    this.parts = [this.kick, this.snare, this.snareBody, this.rim, this.hat, this.ride, this.crash, this.shaker, snareHp, hatHp, crashHp, shakerBp];
+  }
+  connect(dest) { this.out.connect(dest); return this; }
+  hit(drum, time, vel = 0.8) {
+    switch (drum) {
+      case 'kick': this.kick.triggerAttackRelease('A1', 0.1, time, vel); break;
+      case 'snare': this.snare.triggerAttackRelease(0.1, time, vel); this.snareBody.triggerAttackRelease('E3', 0.05, time, vel * 0.8); break;
+      case 'rim': this.rim.triggerAttackRelease('F#5', 0.03, time, vel); break;
+      case 'hhc': this.hat.envelope.decay = 0.05; this.hat.triggerAttackRelease(0.03, time, vel); break;
+      case 'hhp': this.hat.envelope.decay = 0.035; this.hat.triggerAttackRelease(0.02, time, vel * 0.8); break;
+      case 'hho': this.hat.envelope.decay = 0.32; this.hat.triggerAttackRelease(0.2, time, vel); break;
+      case 'ride': this.ride.triggerAttackRelease(320, 0.05, time, vel); break;
+      case 'crash': this.crash.triggerAttackRelease(0.5, time, vel); break;
+      case 'shaker': this.shaker.triggerAttackRelease(0.04, time, vel); break;
+    }
+  }
+  // Instrument-like no-ops so a kit can sit in a channel like anything else.
+  triggerAttackRelease() { return this; }
+  triggerAttack() { return this; }
+  triggerRelease() { return this; }
+  releaseAll() { return this; }
+  dispose() { this.parts.forEach((p) => p.dispose()); this.out.dispose(); }
+}
+
 function build(kind) {
   const Tone = window.Tone;
   switch (kind) {
@@ -49,6 +124,16 @@ function build(kind) {
       for (const note of Object.keys(SAMPLE_URLS)) urls[note] = buffers.get(note);
       return new Tone.Sampler({ urls, release: 1.2 });
     }
+    case 'epiano':
+      return new Tone.PolySynth(Tone.FMSynth, {
+        harmonicity: 3, modulationIndex: 9,
+        oscillator: { type: 'sine' }, modulation: { type: 'sine' },
+        envelope: { attack: 0.002, decay: 1.4, sustain: 0.3, release: 0.9 },
+        modulationEnvelope: { attack: 0.002, decay: 0.35, sustain: 0.08, release: 0.5 },
+        volume: -5,
+      });
+    case 'guitar':
+      return new Guitar();
     case 'organ':
       return new Tone.PolySynth(Tone.Synth, {
         oscillator: { type: 'custom', partials: [1, 0.55, 0.3, 0.16, 0.08] },
@@ -67,6 +152,24 @@ function build(kind) {
         envelope: { attack: 0.18, decay: 0.2, sustain: 0.8, release: 0.5 },
         volume: -20,
       });
+    case 'upright':
+      return new Tone.PolySynth(Tone.MonoSynth, {
+        oscillator: { type: 'triangle' },
+        filter: { type: 'lowpass', Q: 1, rolloff: -24 },
+        filterEnvelope: { attack: 0.002, decay: 0.25, sustain: 0.25, release: 0.2, baseFrequency: 180, octaves: 2.4 },
+        envelope: { attack: 0.005, decay: 0.9, sustain: 0.2, release: 0.12 },
+        volume: -8,
+      });
+    case 'ebass':
+      return new Tone.PolySynth(Tone.MonoSynth, {
+        oscillator: { type: 'square' },
+        filter: { type: 'lowpass', Q: 2.5, rolloff: -24 },
+        filterEnvelope: { attack: 0.002, decay: 0.16, sustain: 0.3, release: 0.2, baseFrequency: 110, octaves: 2.6 },
+        envelope: { attack: 0.003, decay: 0.3, sustain: 0.7, release: 0.08 },
+        volume: -16,
+      });
+    case 'drums':
+      return new DrumKit();
     case 'pluck':
     default:
       return new Tone.PolySynth(Tone.MonoSynth, {
@@ -79,7 +182,7 @@ function build(kind) {
   }
 }
 
-/** Create or update the channel and instrument for a part. Returns the instrument. */
+/** Create or update the channel and instrument for a part ({ id, sound, volume, mute, solo }). */
 function ensure(part) {
   const Tone = window.Tone;
   let c = channels.get(part.id);
@@ -100,7 +203,7 @@ function ensure(part) {
   return c.inst;
 }
 
-/** Bring channels in line with the current parts (adds, updates, removes). */
+/** Bring channels in line with the current parts and band instruments (adds, updates, removes). */
 export function syncParts(parts) {
   const ids = new Set(parts.map((p) => p.id));
   for (const [id, c] of channels) {
@@ -128,36 +231,40 @@ export function noteOn(part, m, vel = 0.8) { ensure(part).triggerAttack(noteName
 export function noteOff(part, m) { ensure(part).triggerRelease(noteName(m)); }
 
 /**
- * Play every part together.
- * tracks: [{ part, events: [{ i, t, dur, midis }], total }]
- * onStep(partIndex, noteIndex) fires in sync with the sound (noteIndex -1 = that part finished).
+ * Play everything together.
+ * tracks: [{ part: { id, sound, volume, mute, solo }, events: [{ t, dur, midis, vel?, i?, drum? }], hl? }]
+ *   hl: index passed to onStep for highlighting (omit for band tracks)
+ * marks: [{ t, key }] -> onMark(key) in sync with the sound (chord symbols)
  */
-export function play(tracks, { loop = false, onStep, onEnd } = {}) {
+export function play(tracks, { total, marks = [], loop = false, onStep, onMark, onEnd } = {}) {
   const Tone = window.Tone;
   stop();
-  const total = Math.max(0.01, ...tracks.map((t) => t.total));
   const all = [];
-  tracks.forEach((tr, pi) => {
+  tracks.forEach((tr) => {
     const inst = ensure(tr.part);
-    for (const ev of tr.events) all.push([ev.t, { pi, inst, ...ev }]);
-    all.push([tr.total, { pi, inst, i: -1, midis: [] }]);
+    for (const ev of tr.events) all.push([ev.t, { inst, hl: tr.hl, ...ev }]);
+    if (tr.hl !== undefined) all.push([tr.total ?? total, { inst, hl: tr.hl, i: -1, midis: [] }]);
   });
+  for (const m of marks) all.push([m.t, { mark: m.key }]);
   tonePart = new Tone.Part((time, ev) => {
-    if (ev.midis.length) {
-      const vel = 0.75 / Math.sqrt(ev.midis.length) + 0.1;
-      ev.inst.triggerAttackRelease(ev.midis.map(noteName), ev.dur * 0.96, time, vel);
+    if (ev.mark !== undefined) { Tone.getDraw().schedule(() => onMark?.(ev.mark), time); return; }
+    if (ev.drum) ev.inst.hit(ev.drum, time, ev.vel ?? 0.8);
+    else if (ev.midis?.length) {
+      const vel = ev.vel ?? 0.75 / Math.sqrt(ev.midis.length) + 0.1;
+      ev.inst.triggerAttackRelease(ev.midis.map(noteName), Math.max(0.03, ev.dur * 0.96), time, vel);
     }
-    Tone.getDraw().schedule(() => onStep?.(ev.pi, ev.i), time);
+    if (ev.hl !== undefined) Tone.getDraw().schedule(() => onStep?.(ev.hl, ev.i), time);
   }, all);
   tonePart.start(0);
   const T = Tone.getTransport();
+  const end = Math.max(0.05, total);
   if (loop) {
     tonePart.loop = true;
-    tonePart.loopEnd = total;
+    tonePart.loopEnd = end;
   } else {
-    T.scheduleOnce((time) => Tone.getDraw().schedule(() => { stop(); onEnd?.(); }, time), total + 0.05);
+    T.scheduleOnce((time) => Tone.getDraw().schedule(() => { stop(); onEnd?.(); }, time), end + 0.05);
   }
-  T.start('+0.05');
+  T.start('+0.08');
 }
 
 export function stop() {
