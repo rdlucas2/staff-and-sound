@@ -53,6 +53,7 @@ The modules that do no DOM or audio work (`notation.js`, `chords.js`, `band.js`,
 - **Theme tokens for every color.** Define new colors in the `:root` block of `css/styles.css` and give them dark values in both dark-theme blocks. The score itself stays on light "paper" in both themes.
 - **Layout must work at phone width** (about 400px) with no horizontal page scroll.
 - **Write UI text plainly**, from the user's side: say what a control does ("Write band to staff"), and make errors say how to fix the problem.
+- **Browser storage keys:** `staff-and-sound:draft:v2` (the score), `staff-and-sound:freeplay` (freeplay settings), `staff-and-sound:tracks` (saved backing tracks), `staff-and-sound:handoff` (chords sent from freeplay to the score; read once and removed), and the IndexedDB database `staff-and-sound` (the sampler's sound).
 - **Keep user data safe.** Anything that replaces the user's work should call `setUndo()` first so Undo can restore it. Persist with the draft in `localStorage` (wrapped in try/catch). For larger data (audio), use IndexedDB.
 
 ## Workflow

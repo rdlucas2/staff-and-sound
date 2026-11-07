@@ -21,6 +21,7 @@ let buffers = null;
 let pianoState = 'loading';
 const channels = new Map(); // id -> { channel, inst, kind }
 let tonePart = null;
+let introPart = null;
 
 function master() {
   if (masterVol) return masterVol;
@@ -470,8 +471,11 @@ export function hit(part, drum, vel = 0.8) { ensure(part).hit?.(drum, undefined,
  * tracks: [{ part: { id, sound, volume, mute, solo }, events: [{ t, dur, midis, vel?, i?, drum? }], hl? }]
  *   hl: index passed to onStep for highlighting (omit for band tracks)
  * marks: [{ t, key }] -> onMark(key) in sync with the sound (chord symbols)
+ * intro: { part, events } played once before everything else (a count-in), lasting introLength
+ *   seconds; with loop on, only the main part loops.
+ * Returns the audio-clock time of the start (the intro's start, if there is one).
  */
-export function play(tracks, { total, marks = [], loop = false, onStep, onMark, onEnd } = {}) {
+export function play(tracks, { total, marks = [], loop = false, onStep, onMark, onEnd, intro = null, introLength = 0 } = {}) {
   const Tone = window.Tone;
   stop();
   const all = [];
@@ -490,14 +494,22 @@ export function play(tracks, { total, marks = [], loop = false, onStep, onMark, 
     }
     if (ev.hl !== undefined) Tone.getDraw().schedule(() => onStep?.(ev.hl, ev.i), time);
   }, all);
-  tonePart.start(0);
   const T = Tone.getTransport();
   const end = Math.max(0.05, total);
+  if (intro?.events?.length) {
+    const inst = ensure(intro.part);
+    introPart = new Tone.Part((time, ev) => {
+      if (ev.drum) inst.hit(ev.drum, time, ev.vel ?? 0.8);
+      if (ev.mark !== undefined) Tone.getDraw().schedule(() => onMark?.(ev.mark), time);
+    }, intro.events.map((e) => [e.t, e]));
+    introPart.start(0);
+  }
+  tonePart.start(introLength);
   if (loop) {
     tonePart.loop = true;
     tonePart.loopEnd = end;
   } else {
-    T.scheduleOnce((time) => Tone.getDraw().schedule(() => { stop(); onEnd?.(); }, time), end + 0.05);
+    T.scheduleOnce((time) => Tone.getDraw().schedule(() => { stop(); onEnd?.(); }, time), introLength + end + 0.05);
   }
   const at = Tone.now() + 0.08;
   T.start(at);
@@ -518,5 +530,6 @@ export function stop() {
   T.cancel();
   T.position = 0;
   if (tonePart) { tonePart.dispose(); tonePart = null; }
+  if (introPart) { introPart.dispose(); introPart = null; }
   for (const c of channels.values()) c.inst?.releaseAll?.();
 }
