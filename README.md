@@ -59,6 +59,10 @@ Voicings move by the smallest steps from chord to chord. Variation is seeded: **
 
 All band sounds are synthesized with Tone.js (no samples beyond the piano): a Karplus-Strong nylon guitar, an FM electric piano, upright and electric basses, and a synth drum kit.
 
+## Starting over
+
+**New** clears everything: one empty piano part, no chords, 4/4 at 108 bpm, band settings back to their defaults. **Load demo** brings back the opening Ode to Joy demo. Both can be undone with **Undo** in the status line. Your master volume is kept.
+
 ## Text notation
 
 | Example | Meaning |

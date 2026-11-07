@@ -719,6 +719,36 @@ $('examples').addEventListener('click', (e) => {
 });
 $('importFile').addEventListener('change', async (e) => { await loadFile(e.target.files[0]); e.target.value = ''; });
 function setUndo() { undoSnapshot = snapshot(); $('undoImport').hidden = false; }
+
+// ---------- new / demo ----------
+const DEFAULT_TEMPO = 108;
+
+/** A fresh piece: blank (one empty part, no chords) or the intro demo. */
+function freshPiece(demo) {
+  return {
+    ts: '4/4', bpm: DEFAULT_TEMPO, active: 0,
+    band: { ...defaultBand(), chart: demo ? [...SAMPLE_CHART] : [] },
+    parts: demo
+      ? SAMPLE_PARTS.map((p) => ({ name: p.name, clef: p.clef, sound: p.sound, volume: p.volume, notes: parse(p.text).notes }))
+      : [{ name: 'Part 1', clef: 'treble', sound: 'piano', volume: 0, notes: [] }],
+  };
+}
+
+function resetTo(demo) {
+  setUndo();
+  applyPiece(freshPiece(demo));
+  state.dots = 0;
+  state.chord = false;
+  $('dotBtn').setAttribute('aria-pressed', 'false');
+  $('chordBtn').setAttribute('aria-pressed', 'false');
+  setDur('q');
+  setStatus('exportStatus', '');
+  setStatus('importStatus', demo
+    ? 'Loaded the demo. Undo brings back what you had.'
+    : 'Started a blank score. Undo brings back what you had.', 'ok');
+}
+$('newBtn').addEventListener('click', () => resetTo(false));
+$('demoBtn').addEventListener('click', () => resetTo(true));
 $('undoImport').addEventListener('click', () => {
   if (!undoSnapshot) return;
   applyPiece(undoSnapshot);
