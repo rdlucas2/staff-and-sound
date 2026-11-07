@@ -120,6 +120,18 @@ In **Record a performance** (under the keyboard):
 
 Timing uses the audio clock and subtracts the browser's reported output latency, so play along to what you hear. Tempo and time signature come from the score. Each part is still one line of notes or chords, so a note held under a moving melody is shortened when the next note starts.
 
+## Demo songs
+
+The **Demo songs** buttons under the transport play five original pieces written for this project, keyboard-demo style. Each one shows off a different side of the engine:
+
+- **Blue Ember** (jazz swing, F blues at 168 bpm): a horn-like synth plays the head and a bebop chorus full of triplets, with a synth brass line answering underneath
+- **Sea Glass** (bossa nova, D minor): a breathy synth flute over nylon guitar comping, strings joining the second time through
+- **Lantern Waltz** (jazz waltz in F, 3/4): grand piano melody, with a glass bell an octave above on the second chorus
+- **Afterglow** (ballad, 68 bpm): a piano melody whose written velocities (`:0-127`) swell to a climax, over a string pad and bell arpeggios
+- **Neon Strut** (funk in E): a wah clav riff locked in with the band, then synth brass trading phrases and stabs
+
+Clicking a demo replaces the score (Undo brings yours back), loads its band, chart and synth patches, and plays it. Click it again to stop. Everything stays editable afterwards, so you can take a demo apart to see how it's written. The songs live in `js/showcase.js` as text notation and chord charts.
+
 ## Starting over
 
 **New** clears everything: one empty piano part, no chords, 4/4 at 108 bpm, band settings back to their defaults. **Load demo** brings back the opening Ode to Joy demo. Both can be undone with **Undo** in the status line. Your master volume is kept.
@@ -179,6 +191,7 @@ js/plan.js          merges parts and band into timed tracks for playback and exp
 js/midi.js          MIDI file export and Web MIDI input
 js/midi-import.js   MIDI file -> parts; notesFromRaw writes timed notes as notation (straight and triplet grids, ties)
 js/quantize.js      quantizing recorded performances (grids, swing, chord grouping, legato)
+js/showcase.js      the demo songs: text notation, chord charts, synth patches, mix
 js/zip.js           tiny store-only zip writer (used when .mid downloads are not allowed)
 samples/salamander  piano samples (CC BY 3.0, see README.txt there)
 demos/              example MIDI files (public-domain pieces)
@@ -213,6 +226,7 @@ Issues and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for
 
 ## Credits
 
+- The demo songs in `js/showcase.js` are original compositions by Claude (Anthropic), MIT licensed with the rest of the code.
 - Salamander Grand Piano V3 by Alexander Holm, [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/). Samples via [Tonejs/audio](https://github.com/Tonejs/audio).
 - VexFlow, Tone.js and @tonejs/midi are MIT licensed.
 

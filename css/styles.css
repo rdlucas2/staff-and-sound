@@ -405,3 +405,23 @@ body.dropping .drop-overlay { display: flex; }
 .kb-black.tone::after { bottom: 24px; left: calc(50% - 4.5px); }
 .kb .tone-root::after { background: var(--accent); width: 11px; height: 11px; }
 .kb-white.tone-root::after, .kb-black.tone-root::after { left: calc(50% - 5.5px); }
+
+/* showcase demo buttons */
+.demo-strip { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.demo-buttons { display: flex; flex-wrap: wrap; gap: 8px; }
+.demo-btn {
+  display: inline-flex; align-items: center; gap: 10px; padding: 6px 14px 6px 6px; cursor: pointer; text-align: left;
+  background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: 10px;
+  box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--line) 80%, transparent);
+}
+.demo-btn:hover { border-color: var(--accent); }
+.demo-num {
+  width: 30px; height: 30px; border-radius: 7px; display: grid; place-items: center; flex: none;
+  font: 600 14px var(--f-mono); background: var(--ink); color: var(--bg);
+}
+.demo-text { display: flex; flex-direction: column; line-height: 1.2; }
+.demo-title { font: 600 14px var(--f-body); }
+.demo-style { font: 400 11.5px var(--f-body); color: var(--muted); }
+.demo-btn.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.demo-btn.on .demo-num { background: var(--accent); color: var(--accent-ink); }
+.demo-blurb { margin: 0; flex-basis: 100%; font-size: 13px; color: var(--muted); max-width: 90ch; }
