@@ -1,7 +1,7 @@
 // Engraves one or more parts as stacked staves with VexFlow's low-level API.
 // Bars line up vertically across parts: each bar index is formatted jointly for every staff,
 // with invisible ghost notes padding any part that is shorter in that bar.
-import { durQ, toMeasures } from './notation.js';
+import { durQ, toMeasures, isTiedFrom } from './notation.js';
 
 const NOTE_W = { w: 46, h: 40, q: 34, '8': 30, '16': 27, '32': 25 };
 const CLEF_W = 44, TS_W = 30, STAFF_H = 92, SYSTEM_GAP = 34, TOP = 6, LEFT = 4;
@@ -53,6 +53,7 @@ export function renderScore(el, parts, { ts, active = 0, onNoteClick, onStaffCli
   const beamGroups = VF.Beam.getDefaultBeamGroups(ts);
   const noteEls = parts.map((p) => new Array(p.notes.length));
   const drawn = [];
+  const placed = parts.map(() => []); // [part][noteIndex] -> { sn, line }
   const x0 = LEFT + LABEL_W;
 
   lines.forEach((bars, li) => {
@@ -118,6 +119,7 @@ export function renderScore(el, parts, { ts, active = 0, onNoteClick, onStaffCli
           const sn = new VF.StaveNote({ keys, duration: n.dur + (n.rest ? 'r' : ''), dots: n.dots, clef: p.clef, autoStem: true });
           if (n.dots) VF.Dot.buildAndAttach([sn], { all: true });
           sn.__part = pi; sn.__idx = i;
+          placed[pi][i] = { sn, line: li };
           return sn;
         });
         const q = idxs.reduce((s, i) => s + durQ(p.notes[i]), 0);
@@ -150,6 +152,20 @@ export function renderScore(el, parts, { ts, active = 0, onNoteClick, onStaffCli
       }
       x += w;
     });
+  });
+
+  // Ties: a full curve within a line, or two half curves across a line break.
+  parts.forEach((p, pi) => {
+    for (let i = 1; i < p.notes.length; i++) {
+      if (!isTiedFrom(p.notes, i)) continue;
+      const a = placed[pi][i - 1], b = placed[pi][i];
+      if (!a || !b) continue;
+      const idx = p.notes[i].keys.map((_, j) => j);
+      const ties = a.line === b.line
+        ? [{ firstNote: a.sn, lastNote: b.sn, firstIndexes: idx, lastIndexes: idx }]
+        : [{ firstNote: a.sn, firstIndexes: idx, lastIndexes: idx }, { lastNote: b.sn, firstIndexes: idx, lastIndexes: idx }];
+      for (const t of ties) new VF.StaveTie(t).setContext(ctx).draw();
+    }
   });
 
   for (const sn of drawn) {
