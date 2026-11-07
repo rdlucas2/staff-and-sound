@@ -130,6 +130,45 @@
     <div class="piano-wrap"><div class="piano" id="piano"></div></div>
   </section>
 
+  <section class="rec-section" aria-label="Record a performance">
+    <div class="section-head"><h2>Record a performance</h2><p>Play freely on a MIDI keyboard, your computer keys or the keys above; it's written into <span class="part-tag" id="recFor"></span> as notation.</p></div>
+    <div class="rec-body">
+      <div class="rec-controls">
+        <button class="rec-btn" id="recBtn" type="button"><span class="smp-dot" aria-hidden="true"></span><span id="recLabel">Record</span></button>
+        <div class="field"><label for="recMode">Where</label>
+          <select id="recMode"><option value="replace">Replace the part</option><option value="append">Add after the end</option></select>
+        </div>
+        <div class="field"><label for="recCount">Count-in</label>
+          <select id="recCount"><option value="0">None</option><option value="1" selected>1 bar</option><option value="2">2 bars</option></select>
+        </div>
+        <label class="check"><input type="checkbox" id="recClick" checked> Click</label>
+        <div class="field"><label for="recClickVol" class="sr-only">Click volume</label><input type="range" id="recClickVol" min="-30" max="0" value="-8" aria-label="Click volume"></div>
+        <label class="check"><input type="checkbox" id="recAlongParts" checked> Other parts</label>
+        <label class="check"><input type="checkbox" id="recAlongBand" checked> Band</label>
+      </div>
+      <p class="rec-status" id="recStatus">Uses the score's tempo and time signature. Space or the button stops recording.</p>
+      <div class="rec-quant" id="recQuant" hidden>
+        <div class="rec-qrow">
+          <div class="field"><label for="qGrid">Quantize to</label><select id="qGrid"></select></div>
+          <div class="field"><label for="qSwing">Feel</label><select id="qSwing"></select></div>
+          <div class="field"><label for="qShortest">Shortest note</label><select id="qShortest"></select></div>
+          <label class="check"><input type="checkbox" id="qLegato"> Legato</label>
+          <label class="check"><input type="checkbox" id="qVel" checked> Keep velocities</label>
+        </div>
+        <div class="rec-qrow">
+          <div class="field"><label for="qChord">Chord window</label><input type="range" id="qChord" min="0" max="120" step="5" value="40"><span class="tempo-val" id="qChordVal">40 ms</span></div>
+          <div class="field"><label for="qIgnore">Ignore shorter than</label><input type="range" id="qIgnore" min="0" max="150" step="5" value="30"><span class="tempo-val" id="qIgnoreVal">30 ms</span></div>
+        </div>
+        <div class="rec-qrow">
+          <span class="rec-summary" id="qSummary"></span>
+          <span class="spacer"></span>
+          <button class="ghost" id="qDiscard" type="button">Discard take</button>
+          <button class="play rec-apply" id="qApply" type="button">Keep it</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <section class="notation">
     <div class="notation-head">
       <h2>Notation as text <span class="part-tag" id="textPart"></span></h2>

@@ -35,14 +35,15 @@ js/sampler.js       sampler data: recording, decoding, trimming, IndexedDB stora
 js/sampler-panel.js sampler editor UI, shared by both pages
 js/play.js          freeplay page (play.html)
 js/midi.js          MIDI file export and Web MIDI keyboard input
-js/midi-import.js   MIDI file to parts (quantizing, chords, ties across bar lines)
+js/midi-import.js   MIDI file to parts; notesFromRaw turns timed notes into notation (straight/triplet grids, ties)
+js/quantize.js      quantizing a recorded performance (pure; runs in Node)
 js/zip.js           minimal zip writer (used where .mid downloads aren't allowed)
 demos/              example MIDI files and examples.json (generated)
 scripts/            build-demos.js, which regenerates demos/ from text notation
 samples/salamander  piano samples (CC BY 3.0)
 ```
 
-The modules that do no DOM or audio work (`notation.js`, `chords.js`, `band.js`, `midi-import.js`, `synth.js`) run in Node as well as the browser. Keep them that way so they stay easy to test.
+The modules that do no DOM or audio work (`notation.js`, `chords.js`, `band.js`, `midi-import.js`, `synth.js`, `quantize.js`) run in Node as well as the browser. Keep them that way so they stay easy to test.
 
 ## Conventions
 
@@ -68,6 +69,7 @@ There's no test framework yet; check your change directly.
 
 - **Pure modules:** run them in Node, e.g. `node -e "import('./js/chords.js').then(m => console.log(m.parseChord('Dm7b5')))"`.
 - **The page:** use Playwright with headless Chromium. Load the page, use the feature, check for page errors, and take screenshots at desktop width and around 400px, in light and dark themes. Chromium needs `--autoplay-policy=no-user-gesture-required` to start audio without a click.
+- **Recording:** to test timing, line key presses up with the clicks actually heard. The take's zero is the playback start time returned by `audio.play` plus the count-in, not the moment you clicked Record. A fake Web MIDI input (replace `navigator.requestMIDIAccess` in an init script) lets you send note and sustain messages.
 - **Microphone:** launch Chromium with `--use-fake-ui-for-media-stream --use-fake-device-for-media-stream` and grant the `microphone` permission to get a fake mic that beeps.
 - **Audio:** you can't listen in headless mode, but you can measure. New synth presets should land within a few dB of the piano when playing a three-note chord. Connect a `Tone.Meter` to `Tone.getDestination()` and compare levels when adding or changing instruments.
 - **Clicking the score:** VexFlow sets `pointer-events="none"` on its SVG, and `css/styles.css` turns it back on. Keep that rule when changing the score styles.
