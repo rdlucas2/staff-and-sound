@@ -210,3 +210,43 @@ details summary { cursor: pointer; color: var(--ink); font-weight: 500; }
 }
 .drop-overlay div { font: 500 22px var(--f-display); color: var(--accent); background: var(--surface); padding: 14px 24px; border-radius: 10px; border: 1px solid var(--line); }
 body.dropping .drop-overlay { display: flex; }
+
+/* chords & band */
+#score { position: relative; }
+#score .chord-slot { fill: transparent; stroke: none; cursor: text; }
+#score .chord-slot:hover { fill: rgba(138, 47, 94, 0.07); }
+#score .chord-slot.empty:hover { fill: rgba(138, 47, 94, 0.1); stroke: rgba(138, 47, 94, 0.35); stroke-dasharray: 3 3; }
+#score .chord-sym { font: 600 16px "IBM Plex Sans", system-ui, sans-serif; fill: #1b1e27; pointer-events: none; }
+#score .chord-sym .q { font-size: 11.5px; font-weight: 500; }
+#score .chord-sym .b { font-size: 13px; font-weight: 500; }
+#score .chord-sym.repeat { fill: #6b6a63; }
+#score .chord-sym.bad { fill: #b4322b; text-decoration: underline wavy; }
+#score .chord-sym.is-playing { fill: #8a2f5e; }
+.chord-input {
+  position: absolute; z-index: 3; height: 30px; padding: 2px 8px; box-sizing: border-box;
+  font: 600 15px var(--f-body); color: #1b1e27; background: #fffef9; border: 1.5px solid #8a2f5e; border-radius: 5px;
+  box-shadow: 0 6px 16px -8px rgba(20, 24, 34, .5);
+}
+.chord-input:focus { outline: none; }
+.band { display: flex; flex-direction: column; gap: 10px; }
+.band-body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(220px, 280px); gap: 12px; align-items: start; }
+@media (max-width: 760px) { .band-body { grid-template-columns: minmax(0, 1fr); } }
+.band-main { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.band-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.band-controls .spacer { flex: 1; }
+.style-desc { margin: 0; font-size: 13px; color: var(--muted); }
+#chart { min-height: 84px; font-size: 15px; }
+.chart-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
+.chart-foot select { max-width: 100%; }
+.chart-help { margin: 0; font-size: 12px; color: var(--muted); flex: 1; min-width: 220px; }
+.chart-help code { font-size: 11px; }
+#chartMsg.bad { color: var(--err); }
+.band-tracks { display: grid; gap: 8px; }
+.band-tracks.off { opacity: .55; }
+.band-track { cursor: default; padding: 8px 10px; gap: 6px; }
+.band-name { font: 600 14px var(--f-body); flex: 1; }
+.band-sub { font-size: 13px; color: var(--muted); padding: 4px 0; }
+/* VexFlow sets pointer-events="none" on its SVG; turn clicks back on for notes, staves and chord slots. */
+#score svg { pointer-events: auto; }
+#score .vf-stavenote { pointer-events: bounding-box; }
+#score .chord-slot { pointer-events: all; }

@@ -107,25 +107,39 @@ export function isTiedFrom(notes, i) {
 }
 
 /**
- * Turn notes into timed events (seconds) for playback or MIDI export.
+ * Swing: map a straight time (in quarter notes) to a swung one. Each beat's off-beat eighth moves
+ * from halfway (ratio 0.5) to `ratio` of the way through the beat (2/3 is triplet swing).
+ */
+export function swingQ(q, ratio = 0.5) {
+  if (ratio === 0.5) return q;
+  const beat = Math.floor(q + 1e-9), f = q - beat;
+  return beat + (f <= 0.5 ? (f / 0.5) * ratio : ratio + ((f - 0.5) / 0.5) * (1 - ratio));
+}
+
+/**
+ * Turn notes into timed events for playback or MIDI export.
+ * Each event has q/qEnd (quarter notes, straight) and t/dur (seconds, with swing applied).
  * Tied notes sound as one: the first event's duration covers the whole chain, and the
  * continuation notes get silent events (midis: []) so highlighting still follows along.
  */
-export function toEvents(notes, bpm, from = 0) {
+export function toEvents(notes, bpm, { swing = 0.5 } = {}) {
   const spq = 60 / bpm;
+  const sec = (q) => swingQ(q, swing) * spq;
   const events = [];
-  let t = 0, head = null;
-  for (let i = from; i < notes.length; i++) {
-    const n = notes[i], d = durQ(n) * spq;
+  let q = 0, head = null;
+  for (let i = 0; i < notes.length; i++) {
+    const n = notes[i], d = durQ(n);
+    const ev = { i, q, qEnd: q + d, t: sec(q), dur: sec(q + d) - sec(q), midis: [] };
     if (head && isTiedFrom(notes, i)) {
-      head.dur += d;
-      events.push({ i, t, dur: d, midis: [], cont: true });
+      head.qEnd = q + d;
+      head.dur = sec(head.qEnd) - head.t;
+      ev.cont = true;
     } else {
-      head = { i, t, dur: d, midis: n.rest ? [] : n.keys.map(midiOf) };
-      events.push(head);
-      if (n.rest) head = null;
+      ev.midis = n.rest ? [] : n.keys.map(midiOf);
+      head = n.rest ? null : ev;
     }
-    t += d;
+    events.push(ev);
+    q += d;
   }
-  return { events, total: t };
+  return { events, total: sec(q), totalQ: q };
 }

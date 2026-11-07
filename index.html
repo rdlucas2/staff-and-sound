@@ -16,7 +16,7 @@
   <header>
     <div>
       <h1>Staff <em>&amp;</em> Sound</h1>
-      <p class="lede">Write on the staff with the keyboard below, a MIDI keyboard, or plain text. VexFlow engraves it and Tone.js plays it back on a sampled grand piano and synths. Add parts to layer instruments.</p>
+      <p class="lede">Write on the staff with the keyboard below, a MIDI keyboard, or plain text. VexFlow engraves it and Tone.js plays it back on a sampled grand piano and synths. Add parts to layer instruments, or write chord symbols and let the band comp for you.</p>
     </div>
     <div class="transport">
       <button class="play" id="playBtn" type="button" aria-label="Play"><svg viewBox="0 0 16 16" id="playIcon"><path d="M3 1.8v12.4L14 8z"/></svg><span id="playLabel">Play</span></button>
@@ -30,12 +30,35 @@
     <span class="status" id="soundStatus"></span>
     <span class="status" id="exportStatus"></span>
     <span class="status" id="importStatus"></span>
-    <button class="linkish" id="undoImport" type="button" hidden>Undo import</button>
+    <button class="linkish" id="undoImport" type="button" hidden>Undo</button>
   </div>
 
   <section class="sheet" aria-label="Score">
     <div id="score"></div>
-    <div class="sheet-meta"><span id="metaLeft"></span><span>Click a staff to edit that part · click a note to select it</span></div>
+    <div class="sheet-meta"><span id="metaLeft"></span><span>Click above a bar to type chords · click a staff to edit that part</span></div>
+  </section>
+
+  <section class="band" aria-label="Chords and backing band">
+    <div class="section-head"><h2>Chords &amp; band</h2><p>Click above any bar to type its chords, or write the whole chart here. The band plays it in the style you pick.</p></div>
+    <div class="band-body">
+      <div class="band-main">
+        <div class="band-controls">
+          <div class="field"><label for="bandStyle">Style</label><select id="bandStyle"></select></div>
+          <label class="check"><input type="checkbox" id="bandOn"> Play band</label>
+          <span class="spacer"></span>
+          <button class="ghost" id="bandVary" type="button" title="Same chords, different rhythms and voicings">New variation</button>
+          <button class="ghost" id="bandWrite" type="button" title="Add the comping and bass as editable parts">Write band to staff</button>
+        </div>
+        <p class="style-desc" id="styleDesc"></p>
+        <textarea id="chart" spellcheck="false" aria-label="Chord chart" placeholder="Dm7 G7 | Cmaj7 | Am7 | D7"></textarea>
+        <div class="chart-foot">
+          <select id="progression" aria-label="Load a chord progression"></select>
+          <p class="chart-help"><code>|</code> separates bars · <code>Dm7 G7</code> splits a bar · <code>Dm7 / / G7</code> sets beats · <code>%</code> repeats a bar · <code>/</code> holds · <code>N.C.</code> no chord</p>
+        </div>
+        <div class="msg" id="chartMsg"></div>
+      </div>
+      <div class="band-tracks" id="bandTracks"></div>
+    </div>
   </section>
 
   <section class="parts-wrap" aria-label="Parts">

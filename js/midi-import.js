@@ -32,16 +32,21 @@ function spellingFor(header) {
 }
 
 /**
- * Turn a list of {start, end, midi} (in sixteenths) into notes, splitting at bar lines.
- * barLen is in sixteenths; maxLen cuts the part off.
+ * Turn a list of {start, end, midi, spell?, key?} (in sixteenths) into notes, splitting at bar lines.
+ * key ({ letter, acc, oct }) fixes a note's spelling exactly; spell picks sharps or flats.
+ * barLen is in sixteenths; maxLen cuts the part off; spell ('#' or 'b') is the default spelling.
  */
-function toNotes(raw, barLen, maxLen, spell) {
+export function notesFromRaw(raw, barLen, maxLen, spell = '#') {
+  const spellOf = new Map();
+  const keyOf = new Map(); // explicit spellings, per note and onset
   // Group by onset into chords.
   const byStart = new Map();
   for (const n of raw) {
     if (n.start >= maxLen) continue;
     if (!byStart.has(n.start)) byStart.set(n.start, []);
     byStart.get(n.start).push(n);
+    if (n.spell) spellOf.set(n.midi, n.spell);
+    if (n.key) keyOf.set(n.midi + '@' + n.start, n.key);
   }
   const starts = [...byStart.keys()].sort((a, b) => a - b);
   const segs = []; // { start, len, midis | null for rest }
@@ -68,7 +73,7 @@ function toNotes(raw, barLen, maxLen, spell) {
       while (chunk > 0) {
         const [len, dur, dots] = PIECES.find(([l]) => l <= chunk);
         const note = seg.midis
-          ? { keys: seg.midis.map((m) => midiToKey(m, spell)), dur, dots, rest: false }
+          ? { keys: seg.midis.map((m) => keyOf.get(m + '@' + seg.start) || midiToKey(m, spellOf.get(m) || spell)), dur, dots, rest: false }
           : { keys: [], dur, dots, rest: true };
         notes.push(note);
         chunk -= len; left -= len; pos += len;
@@ -135,7 +140,7 @@ export function importMidi(midi) {
   if (overlaps) msgs.push('Overlapping notes were shortened');
 
   const parts = candidates.slice(0, MAX_IMPORT_PARTS)
-    .map((c) => ({ name: c.name, clef: c.clef, sound: c.sound, notes: toNotes(c.raw, barLen, maxLen, spell) }))
+    .map((c) => ({ name: c.name, clef: c.clef, sound: c.sound, notes: notesFromRaw(c.raw, barLen, maxLen, spell) }))
     .filter((p) => p.notes.length);
 
   return { ts, bpm, parts, notes: msgs };
