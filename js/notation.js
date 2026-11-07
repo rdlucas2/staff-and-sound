@@ -1,5 +1,6 @@
 // Note model, text notation parser/serializer, and measure layout helpers.
-// A note is { keys: [{ letter, acc, oct }], dur: 'w'|'h'|'q'|'8'|'16'|'32', dots: 0|1|2, rest: bool }.
+// A note is { keys: [{ letter, acc, oct }], dur: 'w'|'h'|'q'|'8'|'16'|'32', dots: 0|1|2, rest: bool, tie?: bool }.
+// tie = tied to the next note (same pitches sound continuously).
 
 export const DUR_Q = { w: 4, h: 2, q: 1, '8': 0.5, '16': 0.25, '32': 0.125 };
 const PC = { c: 0, d: 2, e: 4, f: 5, g: 7, a: 9, b: 11 };
@@ -37,24 +38,24 @@ function parsePitch(s) {
 }
 
 /**
- * Parse text like "C#4/q D4 (C4 E4 G4)/h. r/8 | ...".
- * Duration carries over from the previous token when omitted; "|" is optional.
+ * Parse text like "C#4/q D4 (C4 E4 G4)/h. r/8 | C4/h~ C4/q".
+ * Duration carries over from the previous token when omitted; "|" is optional; "~" ties to the next note.
  * Returns { notes } or { error: offendingToken }.
  */
 export function parse(text) {
-  const tokens = text.match(/\([^)]*\)(?:\/\S*)?|[^\s|]+/g) || [];
+  const tokens = text.match(/\([^)]*\)\S*|[^\s|]+/g) || [];
   const notes = [];
   let lastDur = 'q';
   for (const tok of tokens) {
-    const m = /^(\([^)]*\)|[^/]+)(?:\/(w|h|q|8|16|32)(\.{0,2}))?$/.exec(tok);
+    const m = /^(\([^)]*\)|[^/~]+)(?:\/(w|h|q|8|16|32)(\.{0,2}))?(~)?$/.exec(tok);
     if (!m) return { error: tok };
-    const head = m[1], dur = m[2] || lastDur, dots = (m[3] || '').length;
+    const head = m[1], dur = m[2] || lastDur, dots = (m[3] || '').length, tie = !!m[4];
     lastDur = dur;
     if (/^r$/i.test(head)) { notes.push({ keys: [], dur, dots, rest: true }); continue; }
     const parts = head.startsWith('(') ? head.slice(1, -1).trim().split(/\s+/) : [head];
     const keys = parts.map(parsePitch);
     if (!keys.length || keys.some((k) => !k)) return { error: tok };
-    notes.push({ keys, dur, dots, rest: false });
+    notes.push(tie ? { keys, dur, dots, rest: false, tie } : { keys, dur, dots, rest: false });
   }
   return { notes };
 }
@@ -70,7 +71,7 @@ export function serialize(notes, ts) {
     const head = n.rest ? 'r' : n.keys.length > 1 ? '(' + n.keys.map(pitchStr).join(' ') + ')' : pitchStr(n.keys[0]);
     const durPart = n.dur !== last || n.dots ? '/' + n.dur + '.'.repeat(n.dots) : '';
     last = n.dots ? null : n.dur;
-    bits.push(head + durPart);
+    bits.push(head + durPart + (n.tie && !n.rest ? '~' : ''));
     used += d;
     if (used >= cap - 1e-9) { bits.push('|'); used = 0; }
   }
@@ -97,14 +98,33 @@ export function toMeasures(notes, ts) {
   return out;
 }
 
-/** Turn notes into timed events (seconds) for playback or MIDI export. */
+const samePitches = (a, b) => a.keys.length === b.keys.length && a.keys.every((k, j) => midiOf(k) === midiOf(b.keys[j]));
+
+/** True when note i is the continuation of a tie from note i-1 (same pitches). */
+export function isTiedFrom(notes, i) {
+  const a = notes[i - 1], b = notes[i];
+  return !!(a && b && a.tie && !a.rest && !b.rest && samePitches(a, b));
+}
+
+/**
+ * Turn notes into timed events (seconds) for playback or MIDI export.
+ * Tied notes sound as one: the first event's duration covers the whole chain, and the
+ * continuation notes get silent events (midis: []) so highlighting still follows along.
+ */
 export function toEvents(notes, bpm, from = 0) {
   const spq = 60 / bpm;
   const events = [];
-  let t = 0;
+  let t = 0, head = null;
   for (let i = from; i < notes.length; i++) {
     const n = notes[i], d = durQ(n) * spq;
-    events.push({ i, t, dur: d, midis: n.rest ? [] : n.keys.map(midiOf) });
+    if (head && isTiedFrom(notes, i)) {
+      head.dur += d;
+      events.push({ i, t, dur: d, midis: [], cont: true });
+    } else {
+      head = { i, t, dur: d, midis: n.rest ? [] : n.keys.map(midiOf) };
+      events.push(head);
+      if (n.rest) head = null;
+    }
     t += d;
   }
   return { events, total: t };

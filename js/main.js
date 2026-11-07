@@ -3,6 +3,7 @@ import { parse, serialize, midiOf, pitchStr, midiToKey, toEvents } from './notat
 import { renderScore } from './score.js';
 import * as audio from './audio.js';
 import { buildMidiFile, saveMidi, connectMidiInput } from './midi.js';
+import { importMidi } from './midi-import.js';
 
 const $ = (id) => document.getElementById(id);
 const DRAFT_KEY = 'staff-and-sound:draft:v2';
@@ -11,6 +12,11 @@ const MAX_PARTS = 8;
 const PART_COLORS = ['#8a2f5e', '#1f7a72', '#b0661a', '#4a5bb8', '#5e7d24', '#a23b3b', '#6b4fa0', '#2f6f9a'];
 const SOUND_LABELS = { piano: 'Grand piano', organ: 'Organ', strings: 'Strings', pluck: 'Pluck synth', chip: 'Chiptune' };
 const SOUND_CYCLE = ['piano', 'strings', 'organ', 'pluck', 'chip'];
+const EXAMPLES = [
+  { file: 'demos/minuet-in-g.mid', title: 'Minuet in G', by: 'Petzold (attr. Bach)' },
+  { file: 'demos/canon-in-d.mid', title: 'Canon in D', by: 'Pachelbel' },
+  { file: 'demos/twinkle-twinkle.mid', title: 'Twinkle, Twinkle', by: 'Traditional' },
+];
 
 // Theme from Beethoven's Ninth (public domain), with a simple bass line underneath.
 const SAMPLE_PARTS = [
@@ -257,6 +263,21 @@ function toggleDot() {
   if (state.selected >= 0) { part().notes[state.selected].dots = state.dots; commit(); }
 }
 function toggleChord() { state.chord = !state.chord; $('chordBtn').setAttribute('aria-pressed', String(state.chord)); }
+/** Tie the selected note (or the last note) to the next one. */
+function toggleTie() {
+  const notes = part().notes;
+  const i = state.selected >= 0 ? state.selected : notes.length - 1;
+  if (i < 0 || notes[i].rest) return;
+  notes[i].tie = !notes[i].tie;
+  if (!notes[i].tie) delete notes[i].tie;
+  commit();
+}
+function setTimeSig(ts) {
+  const sel = $('timesig');
+  if (![...sel.options].some((o) => o.value === ts)) sel.add(new Option(ts, ts));
+  sel.value = ts;
+  state.ts = ts;
+}
 function shiftOct(d) { state.octave = Math.max(1, Math.min(6, state.octave + d)); buildPiano(); }
 
 function setMsg(t, bad) { $('msg').textContent = t; $('msg').classList.toggle('bad', !!bad); }
@@ -364,6 +385,104 @@ function setPlayUI(on) {
   $('playIcon').innerHTML = on ? '<rect x="3" y="3" width="10" height="10" rx="1"/>' : '<path d="M3 1.8v12.4L14 8z"/>';
 }
 
+// ---------- import ----------
+let undoSnapshot = null;
+
+function snapshot() {
+  return structuredClone({
+    ts: state.ts, bpm: +$('tempo').value, active: state.active,
+    parts: state.parts.map(({ id, ...rest }) => rest),
+  });
+}
+
+/** Replace the whole piece. parts: [{ name, clef, sound, volume?, mute?, solo?, color?, notes }] */
+function applyPiece({ ts, bpm, parts, active = 0 }) {
+  stopPlayback();
+  setTimeSig(ts);
+  if (bpm) { $('tempo').value = bpm; $('tempoVal').textContent = bpm; }
+  state.parts = [];
+  for (const p of parts) {
+    const { color, ...rest } = p;
+    state.parts.push(makePart({ volume: 0, mute: false, solo: false, ...rest, ...(color ? { color } : {}) }));
+  }
+  audio.syncParts(state.parts);
+  state.active = Math.min(active, state.parts.length - 1);
+  state.selected = -1;
+  state.octave = part().clef === 'bass' ? 2 : 4;
+  buildPiano();
+  renderParts();
+  commit();
+}
+
+async function loadMidi(buffer, label) {
+  let midi;
+  try { midi = new window.Midi(buffer); } catch {
+    setStatus('importStatus', `Couldn't read “${label}” as a MIDI file.`, 'warn');
+    $('undoImport').hidden = true;
+    return;
+  }
+  const r = importMidi(midi);
+  if (!r.parts.length) {
+    setStatus('importStatus', `No notes found in “${label}”.`, 'warn');
+    $('undoImport').hidden = true;
+    return;
+  }
+  undoSnapshot = snapshot();
+  applyPiece({ ts: r.ts, bpm: r.bpm, parts: r.parts });
+  const extra = r.notes.length ? ` ${r.notes.join('. ')}.` : '';
+  setStatus('importStatus', `Opened “${label}”: ${r.parts.length} part${r.parts.length === 1 ? '' : 's'}, ${r.ts} at ${r.bpm} bpm.${extra}`, 'ok');
+  $('undoImport').hidden = false;
+}
+
+async function loadExample(ex) {
+  setStatus('importStatus', `Loading ${ex.title}…`);
+  try {
+    const res = await fetch(ex.file);
+    if (!res.ok) throw new Error(res.status);
+    await loadMidi(await res.arrayBuffer(), ex.title);
+  } catch {
+    setStatus('importStatus', `Couldn't load ${ex.title}. If you opened index.html straight from disk, run a local server instead.`, 'warn');
+  }
+}
+
+async function loadFile(file) {
+  if (!file) return;
+  if (!/\.(mid|midi|smf|kar)$/i.test(file.name)) {
+    setStatus('importStatus', `“${file.name}” isn't a MIDI file. Choose a .mid or .midi file.`, 'warn');
+    return;
+  }
+  await loadMidi(await file.arrayBuffer(), file.name);
+}
+
+$('examples').innerHTML = EXAMPLES.map((ex, i) =>
+  `<button class="example" type="button" data-ex="${i}" title="${esc(ex.by)}"><span>${esc(ex.title)}</span><span class="by">${esc(ex.by)}</span></button>`).join('');
+$('examples').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-ex]');
+  if (b) loadExample(EXAMPLES[+b.dataset.ex]);
+});
+$('importFile').addEventListener('change', async (e) => { await loadFile(e.target.files[0]); e.target.value = ''; });
+$('undoImport').addEventListener('click', () => {
+  if (!undoSnapshot) return;
+  applyPiece(undoSnapshot);
+  undoSnapshot = null;
+  $('undoImport').hidden = true;
+  setStatus('importStatus', 'Import undone.', 'ok');
+});
+
+// Drag a .mid file anywhere onto the page.
+let dragDepth = 0;
+const hasFiles = (e) => [...(e.dataTransfer?.types || [])].includes('Files');
+document.addEventListener('dragenter', (e) => { if (hasFiles(e)) { dragDepth++; document.body.classList.add('dropping'); } });
+document.addEventListener('dragleave', (e) => { if (hasFiles(e) && --dragDepth <= 0) { dragDepth = 0; document.body.classList.remove('dropping'); } });
+document.addEventListener('dragover', (e) => { if (hasFiles(e)) e.preventDefault(); });
+document.addEventListener('drop', (e) => {
+  if (!hasFiles(e)) return;
+  e.preventDefault();
+  dragDepth = 0;
+  document.body.classList.remove('dropping');
+  loadFile(e.dataTransfer.files[0]);
+});
+
 // ---------- MIDI ----------
 async function exportMidi() {
   if (!state.parts.some((p) => p.notes.length)) { setStatus('exportStatus', 'Add some notes first.', 'warn'); return; }
@@ -400,10 +519,11 @@ async function connectMidi() {
 document.querySelectorAll('[data-dur]').forEach((b) => b.addEventListener('click', () => setDur(b.dataset.dur)));
 $('dotBtn').addEventListener('click', toggleDot);
 $('chordBtn').addEventListener('click', toggleChord);
+$('tieBtn').addEventListener('click', toggleTie);
 $('restBtn').addEventListener('click', addRest);
 $('delBtn').addEventListener('click', del);
 $('clearBtn').addEventListener('click', () => { stopPlayback(); part().notes = []; state.selected = -1; commit(); });
-$('timesig').addEventListener('change', (e) => { state.ts = e.target.value; commit(); });
+$('timesig').addEventListener('change', (e) => { setTimeSig(e.target.value); commit(); });
 $('octDown').addEventListener('click', () => shiftOct(-1));
 $('octUp').addEventListener('click', () => shiftOct(1));
 $('spell').addEventListener('change', buildPiano);
@@ -448,6 +568,7 @@ document.addEventListener('keydown', (e) => {
   switch (key) {
     case '.': toggleDot(); break;
     case 'c': toggleChord(); break;
+    case '-': toggleTie(); break;
     case 'r': addRest(); break;
     case 'z': shiftOct(-1); break;
     case 'x': shiftOct(1); break;
@@ -476,7 +597,7 @@ for (const p of source.parts) {
 state.active = Math.min(draft?.active || 0, state.parts.length - 1);
 if (draft?.bpm) { $('tempo').value = draft.bpm; $('tempoVal').textContent = draft.bpm; }
 if (Number.isFinite(draft?.master)) { $('master').value = draft.master; $('masterVal').textContent = draft.master; }
-$('timesig').value = state.ts;
+setTimeSig(state.ts);
 state.octave = part().clef === 'bass' ? 2 : 4;
 
 audio.loadPiano((s) => {

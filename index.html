@@ -11,6 +11,7 @@
 <link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
+<div class="drop-overlay" aria-hidden="true"><div>Drop a MIDI file to open it</div></div>
 <div class="wrap">
   <header>
     <div>
@@ -28,6 +29,8 @@
   <div class="statusline">
     <span class="status" id="soundStatus"></span>
     <span class="status" id="exportStatus"></span>
+    <span class="status" id="importStatus"></span>
+    <button class="linkish" id="undoImport" type="button" hidden>Undo import</button>
   </div>
 
   <section class="sheet" aria-label="Score">
@@ -37,6 +40,12 @@
 
   <section class="parts-wrap" aria-label="Parts">
     <div class="section-head"><h2>Parts</h2><p>Each part is its own staff and instrument. They all play together.</p></div>
+    <div class="import-bar">
+      <span class="group-label">Open</span>
+      <div class="examples" id="examples"></div>
+      <label class="ghost file-btn" for="importFile">Import MIDI…<input type="file" id="importFile" accept=".mid,.midi,audio/midi,audio/x-midi"></label>
+      <span class="hint-drop">or drop a .mid file on the page</span>
+    </div>
     <div class="parts" id="parts"></div>
   </section>
 
@@ -53,6 +62,7 @@
       </div>
       <div class="group">
         <button class="seg text" id="dotBtn" type="button" title="Dotted (.)" aria-pressed="false">Dot<span class="kbd">.</span></button>
+        <button class="seg text" id="tieBtn" type="button" title="Tie the selected (or last) note to the next (-)">Tie<span class="kbd">-</span></button>
         <button class="seg text" id="chordBtn" type="button" title="Chord mode: add pitches to the selected note (c)" aria-pressed="false">Chord<span class="kbd">c</span></button>
         <button class="seg text" id="restBtn" type="button" title="Add a rest (r)">Rest<span class="kbd">r</span></button>
         <button class="seg text" id="delBtn" type="button" title="Delete selected or last note (Backspace)">Delete<span class="kbd">⌫</span></button>
@@ -81,7 +91,7 @@
   <section class="notation">
     <div class="notation-head">
       <h2>Notation as text <span class="part-tag" id="textPart"></span></h2>
-      <p>Edit directly. <code>C#4/q</code> pitch/duration · <code>(C4 E4 G4)/h</code> chord · <code>r/8</code> rest · <code>.</code> dots · duration carries over · <code>|</code> optional</p>
+      <p>Edit directly. <code>C#4/q</code> pitch/duration · <code>(C4 E4 G4)/h</code> chord · <code>r/8</code> rest · <code>.</code> dots · <code>~</code> tie · duration carries over · <code>|</code> optional</p>
     </div>
     <textarea id="text" spellcheck="false" aria-label="Notes as text"></textarea>
     <div class="msg" id="msg"></div>
@@ -96,6 +106,7 @@
         <div><span>Octave down / up</span><kbd>z / x</kbd></div>
         <div><span>Move selection</span><kbd>← →</kbd></div>
         <div><span>Deselect / play–stop</span><kbd>Esc / space</kbd></div>
+        <div><span>Tie to next note</span><kbd>-</kbd></div>
         <div><span>Previous / next part</span><kbd>↑ ↓</kbd></div>
         <div><span>MIDI keyboard chords</span><kbd>press together</kbd></div>
       </div>

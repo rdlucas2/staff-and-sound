@@ -1,0 +1,13 @@
+{
+  "name": "staff-and-sound",
+  "private": true,
+  "type": "module",
+  "description": "Write music on a staff with VexFlow and hear it with Tone.js",
+  "scripts": {
+    "serve": "python3 -m http.server 8000",
+    "demos": "node scripts/build-demos.js"
+  },
+  "devDependencies": {
+    "@tonejs/midi": "2.0.28"
+  }
+}
