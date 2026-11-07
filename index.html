@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Staff &amp; Sound</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="description" content="Write music on a staff with VexFlow and hear it with Tone.js. MIDI keyboard input and MIDI export.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:ital,opsz,wght@0,6..96,500;1,6..96,500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Staff <em>&amp;</em> Sound</h1>
+      <p class="lede">Write on the staff with the keyboard below, a MIDI keyboard, or plain text. VexFlow engraves it and Tone.js plays it back on a sampled grand piano.</p>
+    </div>
+    <div class="transport">
+      <button class="play" id="playBtn" type="button" aria-label="Play"><svg viewBox="0 0 16 16" id="playIcon"><path d="M3 1.8v12.4L14 8z"/></svg><span id="playLabel">Play</span></button>
+      <div class="field"><label for="tempo">Tempo</label><input type="range" id="tempo" min="40" max="220" value="108"><span class="tempo-val" id="tempoVal">108</span></div>
+      <div class="field"><label for="sound">Sound</label>
+        <select id="sound">
+          <option value="piano">Grand piano</option>
+          <option value="organ">Organ</option>
+          <option value="chip">Chiptune</option>
+          <option value="pluck">Pluck synth</option>
+        </select>
+      </div>
+      <label class="check"><input type="checkbox" id="loop"> Loop</label>
+      <button class="ghost" id="exportBtn" type="button">Export MIDI</button>
+    </div>
+  </header>
+  <div class="statusline">
+    <span class="status" id="soundStatus"></span>
+    <span class="status" id="exportStatus"></span>
+  </div>
+
+  <section class="sheet" aria-label="Score">
+    <div id="score"></div>
+    <div class="sheet-meta"><span id="metaLeft"></span><span>Click a note to select it · new notes go after the selection</span></div>
+  </section>
+
+  <section class="deck" aria-label="Note input">
+    <div class="row">
+      <div class="group" role="group" aria-label="Duration">
+        <span class="group-label">Duration</span>
+        <button class="seg" data-dur="w" type="button" title="Whole (1)"><span class="glyph">&#xE1D2;</span><span class="kbd">1</span></button>
+        <button class="seg" data-dur="h" type="button" title="Half (2)"><span class="glyph">&#xE1D3;</span><span class="kbd">2</span></button>
+        <button class="seg" data-dur="q" type="button" title="Quarter (3)"><span class="glyph">&#xE1D5;</span><span class="kbd">3</span></button>
+        <button class="seg" data-dur="8" type="button" title="Eighth (4)"><span class="glyph">&#xE1D7;</span><span class="kbd">4</span></button>
+        <button class="seg" data-dur="16" type="button" title="Sixteenth (5)"><span class="glyph">&#xE1D9;</span><span class="kbd">5</span></button>
+      </div>
+      <div class="group">
+        <button class="seg text" id="dotBtn" type="button" title="Dotted (.)" aria-pressed="false">Dot<span class="kbd">.</span></button>
+        <button class="seg text" id="chordBtn" type="button" title="Chord mode: add pitches to the selected note (c)" aria-pressed="false">Chord<span class="kbd">c</span></button>
+        <button class="seg text" id="restBtn" type="button" title="Add a rest (r)">Rest<span class="kbd">r</span></button>
+        <button class="seg text" id="delBtn" type="button" title="Delete selected or last note (Backspace)">Delete<span class="kbd">⌫</span></button>
+      </div>
+      <span class="spacer"></span>
+      <div class="group">
+        <div class="field"><label for="clef">Clef</label><select id="clef"><option value="treble">Treble</option><option value="bass">Bass</option></select></div>
+        <div class="field"><label for="timesig">Time</label><select id="timesig"><option>4/4</option><option>3/4</option><option>2/4</option><option>6/8</option></select></div>
+      </div>
+    </div>
+    <div class="row">
+      <div class="group">
+        <button class="seg text" id="octDown" type="button" title="Octave down (z)">Oct −<span class="kbd">z</span></button>
+        <button class="seg text" id="octUp" type="button" title="Octave up (x)">Oct +<span class="kbd">x</span></button>
+        <div class="field"><label for="spell">Black keys</label><select id="spell"><option value="#">Sharps</option><option value="b">Flats</option></select></div>
+      </div>
+      <div class="group">
+        <button class="ghost" id="midiBtn" type="button" aria-pressed="false"><span class="dot"></span>Connect MIDI keyboard</button>
+        <span class="status" id="midiStatus" style="font-size:12.5px"></span>
+      </div>
+      <span class="spacer"></span>
+      <button class="seg text" id="clearBtn" type="button">Clear all</button>
+    </div>
+    <div class="piano-wrap"><div class="piano" id="piano"></div></div>
+  </section>
+
+  <section class="notation">
+    <div class="notation-head">
+      <h2>Notation as text</h2>
+      <p>Edit directly. <code>C#4/q</code> pitch/duration · <code>(C4 E4 G4)/h</code> chord · <code>r/8</code> rest · <code>.</code> dots · duration carries over · <code>|</code> optional</p>
+    </div>
+    <textarea id="text" spellcheck="false" aria-label="Notes as text"></textarea>
+    <div class="msg" id="msg"></div>
+    <details>
+      <summary>Keyboard shortcuts</summary>
+      <div class="keys-help">
+        <div><span>White keys C–C</span><kbd>a s d f g h j k</kbd></div>
+        <div><span>Black keys</span><kbd>w e · t y u</kbd></div>
+        <div><span>Durations whole → 16th</span><kbd>1 – 5</kbd></div>
+        <div><span>Toggle dot / chord mode</span><kbd>. / c</kbd></div>
+        <div><span>Rest / delete</span><kbd>r / ⌫</kbd></div>
+        <div><span>Octave down / up</span><kbd>z / x</kbd></div>
+        <div><span>Move selection</span><kbd>← →</kbd></div>
+        <div><span>Deselect / play–stop</span><kbd>Esc / space</kbd></div>
+        <div><span>MIDI keyboard chords</span><kbd>press together</kbd></div>
+      </div>
+    </details>
+    <p class="credits">Piano: Salamander Grand Piano by Alexander Holm (CC BY 3.0). Engraving: VexFlow. Audio: Tone.js.</p>
+  </section>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/vexflow@5.0.0/build/cjs/vexflow.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tone@15.1.22/build/Tone.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tonejs/midi@2.0.28/build/Midi.js"></script>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
