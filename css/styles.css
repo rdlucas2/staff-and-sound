@@ -378,3 +378,30 @@ body.dropping .drop-overlay { display: flex; }
 .rec-summary { font-size: 13px; color: var(--ink); }
 .rec-apply { padding: 8px 18px; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* freeplay backing track */
+.fp-band { display: flex; flex-direction: column; gap: 10px; }
+.fp-band-body { display: grid; grid-template-columns: minmax(170px, 210px) minmax(0, 1fr) minmax(220px, 260px); gap: 12px; align-items: start; }
+@media (max-width: 900px) { .fp-band-body { grid-template-columns: minmax(0, 1fr); } }
+.fp-band-main { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.fp-now {
+  background: var(--paper); color: #1b1e27; border: 1px solid var(--paper-edge); border-radius: 10px; padding: 12px 14px;
+  display: flex; flex-direction: column; gap: 4px; min-height: 160px; justify-content: center;
+}
+.fp-now-label { font: 600 10px var(--f-body); text-transform: uppercase; letter-spacing: .1em; color: #6b6a63; }
+.fp-now-chord { font: 600 54px/1 var(--f-body); letter-spacing: -0.01em; overflow-wrap: anywhere; }
+.fp-now-chord .q { font-size: .5em; vertical-align: super; font-weight: 500; }
+.fp-now-chord .b { font-size: .6em; font-weight: 500; }
+.fp-now-next { font: 600 20px var(--f-body); color: #4a4a44; display: flex; align-items: baseline; gap: 8px; }
+.fp-now-next .q { font-size: .6em; vertical-align: super; font-weight: 500; }
+.fp-now-bar { font: 12px var(--f-mono); color: #6b6a63; font-variant-numeric: tabular-nums; }
+.fp-now.counting .fp-now-chord { color: #b0661a; }
+#fpChart { min-height: 72px; font-size: 15px; }
+.fp-saved { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
+.fp-save-name { font: 14px var(--f-body); color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; min-width: 0; width: 180px; }
+.kb .tone::after { content: ""; position: absolute; width: 9px; height: 9px; border-radius: 50%; background: var(--select); opacity: .85; }
+.kb-white { position: relative; }
+.kb-white.tone::after { bottom: 34px; left: calc(50% - 4.5px); }
+.kb-black.tone::after { bottom: 24px; left: calc(50% - 4.5px); }
+.kb .tone-root::after { background: var(--accent); width: 11px; height: 11px; }
+.kb-white.tone-root::after, .kb-black.tone-root::after { left: calc(50% - 5.5px); }

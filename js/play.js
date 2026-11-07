@@ -5,6 +5,9 @@ import { defaultPatch, normalizePatch } from './synth.js';
 import { mountSynthPanel } from './synth-panel.js';
 import { createKeyboard, noteLabel } from './keyboard.js';
 import { initSampler, mountSamplerPanel } from './sampler-panel.js';
+import { STYLES, PROGRESSIONS } from './band.js';
+import { parseChart, chartFromText, chartToText, prettyChord, chordPcs } from './chords.js';
+import { buildPlan, BAND_IDS, hasChords } from './plan.js';
 
 const $ = (id) => document.getElementById(id);
 const STORE_KEY = 'staff-and-sound:freeplay';
@@ -19,9 +22,27 @@ const PADS = [
 // Computer keys, as semitones above the hinted C.
 const KEYMAP = { a: 0, w: 1, s: 2, e: 3, d: 4, f: 5, t: 6, g: 7, y: 8, h: 9, u: 10, j: 11, k: 12, o: 13, l: 14, p: 15, ';': 16, "'": 17 };
 
+const TRACKS_KEY = 'staff-and-sound:tracks';     // saved backing tracks
+const DRAFT_KEY = 'staff-and-sound:draft:v2';     // the main page's score (read only here)
+const HANDOFF_KEY = 'staff-and-sound:handoff';    // chords sent to the main page
+const BAND_SOUND_LABELS = { piano: 'Grand piano', epiano: 'Electric piano', guitar: 'Nylon guitar', organ: 'Organ', strings: 'Strings', pluck: 'Pluck synth', chip: 'Chiptune', upright: 'Upright bass', ebass: 'Electric bass' };
+const COMP_SOUNDS = ['piano', 'epiano', 'guitar', 'organ', 'strings', 'pluck', 'chip'];
+const BASS_SOUNDS = ['upright', 'ebass', 'pluck', 'piano'];
+const BAND_COLORS = { comp: '#8c7a3e', bass: '#3f6b8c', drums: '#6f6a7a' };
+
+function bandFor(styleKey, chartText, extra = {}) {
+  const st = STYLES[styleKey];
+  return {
+    style: styleKey, chart: chartFromText(chartText), seed: 1, bpm: st.tempo, loop: true, countIn: 1, tones: true,
+    comp: { sound: st.comp, volume: -4, mute: false }, bass: { sound: st.bass, volume: -2, mute: false }, drums: { volume: -6, mute: false },
+    ...extra,
+  };
+}
+const defaultBand = () => { const p = PROGRESSIONS.find((x) => x.style === 'bossa') || PROGRESSIONS[0]; return bandFor(p.style, p.chart); };
+
 const state = {
   sound: 'synth', patch: defaultPatch(), octave: 3, span: window.innerWidth < 640 ? 2 : 3,
-  transpose: 0, velocity: 75, volume: 80, sustain: false,
+  transpose: 0, velocity: 75, volume: 80, sustain: false, band: defaultBand(),
 };
 try {
   const s = JSON.parse(localStorage.getItem(STORE_KEY) || 'null');
@@ -34,6 +55,7 @@ try {
       transpose: Math.min(12, Math.max(-12, s.transpose ?? 0)),
       velocity: s.velocity ?? state.velocity,
       volume: s.volume ?? state.volume,
+      band: s.band && STYLES[s.band.style] ? { ...defaultBand(), ...s.band, chart: (s.band.chart || []).map(String) } : state.band,
     });
   }
 } catch {}
@@ -50,7 +72,13 @@ function save() {
 
 const part = () => ({ id: 'free', sound: state.sound, volume: 0, mute: false, solo: false, patch: state.patch });
 const drums = { id: 'free-drums', sound: 'drums', volume: -3, mute: false, solo: false };
-const sync = () => audio.syncParts([part(), drums]);
+const clickPart = { id: 'fp-click', sound: 'drums', volume: -6, mute: false, solo: false };
+const bandChannels = () => [
+  { id: BAND_IDS.comp, solo: false, ...state.band.comp },
+  { id: BAND_IDS.bass, solo: false, ...state.band.bass },
+  { id: BAND_IDS.drums, solo: false, sound: 'drums', ...state.band.drums },
+];
+const sync = () => audio.syncParts([part(), drums, clickPart, ...bandChannels()]);
 
 // ---------- notes ----------
 const held = new Map();   // source key -> sounding midi (after transpose)
@@ -166,6 +194,260 @@ const samplerPanel = mountSamplerPanel($('fpSamplerPanel'), {
 });
 initSampler().then(() => samplerPanel.refresh());
 
+
+// ---------- backing track ----------
+const B = () => state.band;
+const tsOf = () => STYLES[B().style].ts;
+let bandPlaying = false;
+let order = [];      // chord changes in playback order: { key, sym, chord, bar }
+let nBars = 0;
+
+function chordHtml(sym) {
+  if (!sym) return '–';
+  const pc = prettyChord(sym);
+  const esc = (x) => x.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  return `${esc(pc.root)}${pc.quality ? `<span class="q">${esc(pc.quality)}</span>` : ''}${pc.bass ? `<span class="b">${esc(pc.bass)}</span>` : ''}`;
+}
+
+function chartMessage() {
+  const [num, den] = tsOf().split('/').map(Number);
+  const { errors } = parseChart(B().chart, num, 4 / den);
+  const el = $('fpChartMsg');
+  el.textContent = errors.length
+    ? `Don't recognize ${errors.slice(0, 3).map((e) => `“${e.token}” (bar ${e.bar + 1})`).join(', ')}. Try forms like Cmaj7, Dm7b5, G7#9 or F/A.`
+    : '';
+  el.classList.toggle('bad', !!errors.length);
+}
+
+function bandTrackCard(key, label, sounds) {
+  const t = B()[key];
+  const sel = sounds
+    ? `<select id="fpb-sound-${key}" data-bact="sound" aria-label="${label} sound">${sounds.map((v) => `<option value="${v}"${v === t.sound ? ' selected' : ''}>${BAND_SOUND_LABELS[v]}</option>`).join('')}</select>`
+    : '<span class="band-sub">Drum kit</span>';
+  return `<article class="part band-track" data-band="${key}" style="--pc:${BAND_COLORS[key]}" aria-label="${label}">
+    <div class="part-head"><span class="chip" aria-hidden="true"></span><span class="band-name">${label}</span></div>
+    <div class="part-row">${sel}</div>
+    <div class="part-row">
+      <input type="range" id="fpb-vol-${key}" data-bact="volume" min="-30" max="6" step="1" value="${t.volume}" aria-label="${label} volume">
+      <span class="db">${t.volume > 0 ? '+' : ''}${t.volume} dB</span>
+      <button class="ms${t.mute ? ' on' : ''}" type="button" data-bact="mute" aria-pressed="${t.mute}" title="Mute">M</button>
+    </div>
+  </article>`;
+}
+
+function renderBand() {
+  const b = B();
+  $('fpStyle').value = b.style;
+  $('fpStyleDesc').textContent = `${STYLES[b.style].desc} ${tsOf()}.`;
+  $('fpTempo').value = b.bpm; $('fpTempoVal').textContent = b.bpm;
+  $('fpLoop').checked = b.loop;
+  $('fpCount').value = String(b.countIn);
+  $('fpTones').checked = b.tones;
+  if (document.activeElement !== $('fpChart')) $('fpChart').value = chartToText(b.chart);
+  $('fpBandTracks').innerHTML = bandTrackCard('comp', 'Comping', COMP_SOUNDS) + bandTrackCard('bass', 'Bass', BASS_SOUNDS) + bandTrackCard('drums', 'Drums', null);
+  chartMessage();
+}
+
+function renderSaved(selected = '') {
+  const list = loadTracks();
+  $('fpSaved').innerHTML = `<option value="">${list.length ? 'Load a saved track…' : 'No saved tracks yet'}</option>` +
+    list.map((t, i) => `<option value="${i}"${t.name === selected ? ' selected' : ''}>${t.name.replace(/</g, '&lt;')} · ${STYLES[t.style]?.name || ''}</option>`).join('');
+  $('fpDelete').disabled = !selected;
+}
+function loadTracks() { try { return JSON.parse(localStorage.getItem(TRACKS_KEY) || '[]').filter((t) => t && STYLES[t.style]); } catch { return []; } }
+function storeTracks(list) { try { localStorage.setItem(TRACKS_KEY, JSON.stringify(list)); return true; } catch { return false; } }
+const setBandStatus = (text, tone) => { const el = $('fpBandStatus'); el.textContent = text; el.dataset.tone = tone || ''; };
+
+function showChord(key) {
+  const now = $('fpNowChord'), next = $('fpNextChord'), bar = $('fpNowBar'), box = document.querySelector('.fp-now');
+  if (key && String(key).startsWith('count:')) {
+    box.classList.add('counting');
+    now.textContent = key.slice(6);
+    next.innerHTML = chordHtml(order[0]?.sym);
+    bar.textContent = 'Count-in';
+    return;
+  }
+  box.classList.remove('counting');
+  const i = order.findIndex((o) => o.key === key);
+  if (i < 0) {
+    now.textContent = '–';
+    next.textContent = '–';
+    bar.textContent = bandPlaying ? '' : 'Press Play band';
+    kb.setTones(null);
+    return;
+  }
+  const cur = order[i];
+  const nxt = order[i + 1] || (B().loop ? order[0] : null);
+  now.innerHTML = chordHtml(cur.sym);
+  next.innerHTML = chordHtml(nxt?.sym);
+  bar.textContent = `Bar ${cur.bar + 1} of ${nBars}`;
+  if (B().tones && cur.chord) kb.setTones(new Set(chordPcs(cur.chord).map((pc) => ((pc + 12 - state.transpose % 12) % 12))), (cur.chord.root + 12 - state.transpose % 12) % 12);
+  else kb.setTones(null);
+}
+
+function setBandUI(on) {
+  $('fpBandLabel').textContent = on ? 'Stop band' : 'Play band';
+  $('fpBandIcon').innerHTML = on ? '<rect x="3" y="3" width="10" height="10" rx="1"/>' : '<path d="M3 1.8v12.4L14 8z"/>';
+}
+
+function stopBand() {
+  audio.stop();
+  bandPlaying = false;
+  setBandUI(false);
+  showChord(null);
+}
+
+function playBand() {
+  audio.unlock();
+  const b = B();
+  if (!hasChords({ chart: b.chart })) { setBandStatus('Write some chords first, or load a progression.', 'warn'); return; }
+  const ts = tsOf();
+  const [num, den] = ts.split('/').map(Number);
+  const plan = buildPlan({ parts: [], band: { ...b, on: true }, ts, bpm: b.bpm, ending: !b.loop });
+  nBars = b.chart.length;
+  order = [];
+  plan.backing.chart.bars.forEach((bar, bi) => bar.chords.forEach((c, k) => { if (!c.bad) order.push({ key: `${bi}:${k}`, sym: c.sym, chord: c.chord, bar: bi }); }));
+  const beatSec = (4 / den) * (60 / b.bpm);
+  const countBeats = b.countIn * num;
+  const intro = [];
+  for (let k = 0; k < countBeats; k++) {
+    intro.push({ t: k * beatSec, drum: k % num === 0 ? 'clickHi' : 'click', vel: k % num === 0 ? 0.9 : 0.65 });
+    intro.push({ t: k * beatSec, mark: `count:${countBeats - k}` });
+  }
+  sync();
+  audio.play(plan.tracks, {
+    total: plan.total, marks: plan.marks, loop: b.loop,
+    intro: { part: clickPart, events: intro }, introLength: countBeats * beatSec,
+    onMark: showChord,
+    onEnd: () => { bandPlaying = false; setBandUI(false); showChord(null); },
+  });
+  bandPlaying = true;
+  setBandUI(true);
+  setBandStatus('');
+}
+const restartIfPlaying = () => { if (bandPlaying) { stopBand(); playBand(); } };
+
+function setStyle(key) {
+  const st = STYLES[key];
+  Object.assign(B(), { style: key, bpm: st.tempo });
+  B().comp.sound = st.comp;
+  B().bass.sound = st.bass;
+  sync();
+  renderBand();
+  save();
+  restartIfPlaying();
+}
+
+$('fpStyle').innerHTML = Object.entries(STYLES).map(([k, st]) => `<option value="${k}">${st.name}</option>`).join('');
+$('fpProg').innerHTML = '<option value="">Load a progression…</option>' + PROGRESSIONS.map((p, i) => `<option value="${i}">${p.name} · ${STYLES[p.style].name}</option>`).join('');
+$('fpBandPlay').addEventListener('click', () => (bandPlaying ? stopBand() : playBand()));
+$('fpStyle').addEventListener('change', (e) => setStyle(e.target.value));
+$('fpProg').addEventListener('change', (e) => {
+  const p = PROGRESSIONS[+e.target.value];
+  e.target.value = '';
+  if (!p) return;
+  B().chart = chartFromText(p.chart);
+  setStyle(p.style);
+  setBandStatus(`Loaded “${p.name}”.`, 'ok');
+});
+$('fpVary').addEventListener('click', () => { B().seed = (B().seed % 9973) + 1; save(); restartIfPlaying(); setBandStatus(`Variation ${B().seed}.`, 'ok'); });
+$('fpTempo').addEventListener('input', (e) => { B().bpm = +e.target.value; $('fpTempoVal').textContent = e.target.value; save(); });
+$('fpTempo').addEventListener('change', restartIfPlaying);
+$('fpLoop').addEventListener('change', (e) => { B().loop = e.target.checked; save(); });
+$('fpCount').addEventListener('change', (e) => { B().countIn = +e.target.value; save(); });
+$('fpTones').addEventListener('change', (e) => { B().tones = e.target.checked; if (!e.target.checked) kb.setTones(null); save(); });
+$('fpChart').addEventListener('input', (e) => { B().chart = chartFromText(e.target.value); chartMessage(); save(); });
+$('fpChart').addEventListener('change', restartIfPlaying);
+$('fpChart').addEventListener('blur', () => { $('fpChart').value = chartToText(B().chart); });
+$('fpBandTracks').addEventListener('input', (e) => {
+  const card = e.target.closest('[data-band]');
+  if (!card || e.target.dataset.bact !== 'volume') return;
+  B()[card.dataset.band].volume = +e.target.value;
+  card.querySelector('.db').textContent = `${+e.target.value > 0 ? '+' : ''}${e.target.value} dB`;
+  sync(); save();
+});
+$('fpBandTracks').addEventListener('change', (e) => {
+  const card = e.target.closest('[data-band]');
+  if (!card || e.target.dataset.bact !== 'sound') return;
+  B()[card.dataset.band].sound = e.target.value;
+  sync(); save();
+});
+$('fpBandTracks').addEventListener('click', (e) => {
+  const card = e.target.closest('[data-band]');
+  if (!card || e.target.dataset.bact !== 'mute') return;
+  const t = B()[card.dataset.band];
+  t.mute = !t.mute;
+  sync(); renderBand(); save();
+});
+
+// Saved backing tracks.
+let lastDeleted = null;
+const snapshotBand = (name) => ({ name, ...structuredClone(B()) });
+$('fpSave').addEventListener('click', () => {
+  const name = $('fpSaveName').value.trim();
+  if (!name) { setBandStatus('Type a name for the track first.', 'warn'); $('fpSaveName').focus(); return; }
+  if (!hasChords({ chart: B().chart })) { setBandStatus('There are no chords to save yet.', 'warn'); return; }
+  const list = loadTracks().filter((t) => t.name !== name);
+  list.push(snapshotBand(name));
+  list.sort((a, b) => a.name.localeCompare(b.name));
+  if (!storeTracks(list)) { setBandStatus('This browser isn\'t letting the page save. Try a regular window.', 'warn'); return; }
+  renderSaved(name);
+  setBandStatus(`Saved “${name}”.`, 'ok');
+});
+$('fpSaved').addEventListener('change', (e) => {
+  const t = loadTracks()[+e.target.value];
+  if (!t) { $('fpDelete').disabled = true; return; }
+  const { name, ...band } = structuredClone(t);
+  state.band = { ...defaultBand(), ...band };
+  $('fpSaveName').value = name;
+  $('fpDelete').disabled = false;
+  sync(); renderBand(); save(); restartIfPlaying();
+  setBandStatus(`Loaded “${name}”.`, 'ok');
+});
+$('fpDelete').addEventListener('click', () => {
+  const list = loadTracks();
+  const i = +$('fpSaved').value;
+  if (!list[i]) return;
+  lastDeleted = list[i];
+  list.splice(i, 1);
+  storeTracks(list);
+  renderSaved();
+  setBandStatus(`Deleted “${lastDeleted.name}”.`);
+  $('fpUndoDelete').hidden = false;
+});
+$('fpUndoDelete').addEventListener('click', () => {
+  if (!lastDeleted) return;
+  const list = loadTracks();
+  list.push(lastDeleted);
+  list.sort((a, b) => a.name.localeCompare(b.name));
+  storeTracks(list);
+  renderSaved(lastDeleted.name);
+  setBandStatus(`Restored “${lastDeleted.name}”.`, 'ok');
+  lastDeleted = null;
+  $('fpUndoDelete').hidden = true;
+});
+
+// Sharing with the main page.
+$('fpFromScore').addEventListener('click', () => {
+  let draft = null;
+  try { draft = JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null'); } catch {}
+  const band = draft?.band;
+  if (!band?.chart?.some((x) => x && x.trim() && x.trim() !== '/')) { setBandStatus('The score on the main page has no chords yet.', 'warn'); return; }
+  const style = STYLES[band.style] ? band.style : 'swing';
+  state.band = { ...defaultBand(), style, chart: band.chart.map(String), seed: band.seed || 1, bpm: draft.bpm || STYLES[style].tempo,
+    comp: { ...defaultBand().comp, ...band.comp, mute: false }, bass: { ...defaultBand().bass, ...band.bass, mute: false }, drums: { ...defaultBand().drums, ...band.drums } };
+  sync(); renderBand(); save(); restartIfPlaying();
+  setBandStatus(`Loaded the score's ${state.band.chart.length} bars of chords.`, 'ok');
+});
+$('fpToScore').addEventListener('click', () => {
+  if (!hasChords({ chart: B().chart })) { setBandStatus('Write some chords first.', 'warn'); return; }
+  try {
+    localStorage.setItem(HANDOFF_KEY, JSON.stringify({ at: Date.now(), ...structuredClone(B()) }));
+  } catch { setBandStatus('This browser isn\'t letting the page save, so the chords can\'t be passed along.', 'warn'); return; }
+  stopBand();
+  location.href = 'index.html';
+});
+
 // Computer keyboard.
 const downKeys = new Map(); // key -> midi
 document.addEventListener('keydown', (e) => {
@@ -221,3 +503,5 @@ sync();
 audio.setMasterVolume(state.volume);
 showSynth();
 layoutKeyboard();
+renderBand();
+renderSaved();

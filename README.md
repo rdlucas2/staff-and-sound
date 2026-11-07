@@ -8,7 +8,7 @@ Write music on a staff and hear it played back, in the browser, with no build st
 - **Sound:** [Tone.js](https://tonejs.github.io/) plays a sampled grand piano (Salamander), plus strings, organ, pluck and chiptune synths. Each part has volume, mute and solo; there's a master volume too.
 - **Synth:** any part can use an editable synth, with two oscillators (unison spread, pulse width), amp and filter envelopes, resonant filter, vibrato and tremolo, mono with glide, chorus, delay and reverb. Comes with presets such as Synth Brass, Strings, Square Lead, Glass Bell, Synth Bass, Warm Pad, 8-bit Lead and Wah Clav.
 - **Sampler:** record a sound with the microphone (or load an audio file) and play it across the keyboard, Casio SK-1 style, with auto-trim, root note, loop, reverse, attack and release.
-- **Freeplay:** `play.html` is just the instrument: a big multi-touch keyboard, computer-keyboard and MIDI input with velocity and sustain pedal, octave and transpose, drum pads and the synth editor.
+- **Freeplay:** `play.html` is just the instrument: a big multi-touch keyboard, computer-keyboard and MIDI input with velocity and sustain pedal, octave and transpose, drum pads, the synth editor and the sampler, plus a backing band to jam over (your own chord charts, saved as backing tracks).
 - **Record:** play freely (MIDI keyboard, computer keys or on-screen keys) with a click and count-in, optionally over your other parts and the band, and the take is written as notation. Adjust quantize (straight or triplet grids, swing feel, shortest note, legato, chord window) and watch the staff update before keeping it.
 - **Input:** on-screen piano, computer keyboard, a MIDI keyboard (Web MIDI API), or a text notation.
 - **Import:** open any `.mid` file (picker or drag-and-drop) or one of the bundled examples. Each track becomes a part; rhythms snap to sixteenths, notes crossing a bar line are tied, and two-hand piano tracks split onto two staves. Undo restores what you had.
@@ -78,7 +78,14 @@ The **Freeplay keyboard** (`play.html`, linked from the top of the page) has no 
 | `1`–`8` | drum pads |
 | `Esc` | all notes off |
 
-Freeplay settings and the patch are remembered separately from the score.
+**Backing track.** Freeplay has its own chord chart and band (same chart syntax, styles and presets as the score):
+
+- **Play band** with tempo, loop (on by default) and a count-in. A large **Now / Next** display shows the current and upcoming chord and the bar, and the current chord's tones are marked on the keyboard (the root in a stronger color) so you know what fits. Turn that off with **Show chord tones**.
+- Keep playing the keyboard, MIDI keyboard, sampler or synth over it; comping, bass and drums have their own sound, volume and mute.
+- **My tracks:** name and save backing tracks (chart, style, tempo, variation and mix) in this browser, load them later, delete them (with undo).
+- **Use the score's chords** loads the chart, style and tempo from the main page. **Open on the staff →** sends the current chart to the main page's score, where Undo puts the previous chords back.
+
+Freeplay settings, the patch and saved tracks are remembered separately from the score.
 
 ## Sampler
 

@@ -89,5 +89,13 @@ export function createKeyboard(el, { onNoteOn, onNoteOff }) {
     setRange(lo, hi, hints) { low = lo; high = hi; render(hints); },
     setDown(m, on) { keys.get(m)?.classList.toggle('down', on); },
     releaseAll() { for (const [id, m] of pointers) { onNoteOff(m); pointers.delete(id); } },
+    /** Mark chord tones (pitch classes) on the keys; root gets its own style. Pass null to clear. */
+    setTones(pcs, root) {
+      for (const [m, k] of keys) {
+        const pc = ((m % 12) + 12) % 12;
+        k.classList.toggle('tone', !!pcs && pcs.has(pc));
+        k.classList.toggle('tone-root', !!pcs && pc === root);
+      }
+    },
   };
 }

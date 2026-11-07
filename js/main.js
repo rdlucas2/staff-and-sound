@@ -6,7 +6,7 @@ import * as audio from './audio.js';
 import { buildMidiFile, saveMidi, connectMidiInput } from './midi.js';
 import { importMidi, notesFromRaw } from './midi-import.js';
 import { parseChart, chartFromText, chartToText, spellInChord } from './chords.js';
-import { STYLES, generateBacking } from './band.js';
+import { STYLES, PROGRESSIONS, generateBacking } from './band.js';
 import { defaultPatch, normalizePatch } from './synth.js';
 import { mountSynthPanel } from './synth-panel.js';
 import { initSampler, mountSamplerPanel } from './sampler-panel.js';
@@ -24,16 +24,7 @@ const SOUND_LABELS = {
 const COMP_SOUNDS = ['piano', 'epiano', 'guitar', 'organ', 'strings', 'pluck', 'chip'];
 const BASS_SOUNDS = ['upright', 'ebass', 'pluck', 'piano'];
 const BAND_COLORS = { comp: '#8c7a3e', bass: '#3f6b8c', drums: '#6f6a7a' };
-const PROGRESSIONS = [
-  { name: 'Jazz blues in F', style: 'swing', chart: 'F7 | Bb7 | F7 | Cm7 F7 | Bb7 | Bdim7 | F7 | D7alt | Gm7 | C7 | F7 D7 | Gm7 C7' },
-  { name: 'ii–V–I, major then minor', style: 'swing', chart: 'Dm7 | G7 | Cmaj7 | % | Dm7b5 | G7b9 | Cm6 | %' },
-  { name: 'Rhythm changes, A section', style: 'swing', chart: 'Bb6 G7 | Cm7 F7 | Dm7 G7 | Cm7 F7 | Fm7 Bb7 | Ebmaj7 Ab7 | Dm7 G7 | Cm7 F7' },
-  { name: 'Bossa in D minor', style: 'bossa', chart: 'Dm9 | % | Em7b5 | A7b9 | Dm9 | % | Gm9 | C9 | Fmaj7 | Bbmaj7 | Em7b5 | A7b9 | Dm9 | % | Em7b5 A7b9 | Dm9' },
-  { name: 'Jazz waltz in F', style: 'waltz', chart: 'Fmaj7 | Gm7 C7 | Am7 | D7b9 | Gm7 | C7 | Fmaj7 | Gm7 C7' },
-  { name: 'Ballad in E♭', style: 'ballad', chart: 'Ebmaj7 | Cm7 | Fm7 | Bb7sus4 Bb7 | Gm7 | C7 | Fm7 | Bb7' },
-  { name: 'Pop: I–V–vi–IV', style: 'pop', chart: 'C | G | Am | F | C | G | Am | F' },
-  { name: 'Funk vamp in E', style: 'funk', chart: 'E7#9 | % | % | % | A9 | % | E7#9 | %' },
-];
+
 const SOUND_CYCLE = ['piano', 'strings', 'organ', 'pluck', 'chip'];
 let EXAMPLES = []; // loaded from demos/examples.json
 
@@ -1208,6 +1199,26 @@ buildPiano();
 renderParts();
 renderBand();
 commit();
+
+// Chords sent over from the freeplay page ("Open on the staff").
+try {
+  const h = JSON.parse(localStorage.getItem('staff-and-sound:handoff') || 'null');
+  localStorage.removeItem('staff-and-sound:handoff');
+  if (h && Date.now() - h.at < 10 * 60 * 1000 && STYLES[h.style] && Array.isArray(h.chart)) {
+    setUndo();
+    const d = defaultBand();
+    state.band = {
+      ...state.band, on: true, style: h.style, chart: h.chart.map(String), seed: h.seed || 1,
+      comp: { ...d.comp, ...h.comp }, bass: { ...d.bass, ...h.bass }, drums: { ...d.drums, ...h.drums },
+    };
+    if (h.bpm) { $('tempo').value = h.bpm; $('tempoVal').textContent = h.bpm; }
+    if (STYLES[h.style].ts !== state.ts) setTimeSig(STYLES[h.style].ts);
+    syncAudio();
+    renderBand();
+    commit();
+    setStatus('importStatus', `Brought ${h.chart.length} bars of chords over from Freeplay (${STYLES[h.style].name}). Undo puts back your previous chords.`, 'ok');
+  }
+} catch {}
 if (!navigator.requestMIDIAccess) setStatus('midiStatus', 'No Web MIDI in this browser', 'warn');
 
 let resizeTimer;

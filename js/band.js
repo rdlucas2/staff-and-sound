@@ -18,6 +18,18 @@ export const STYLES = {
     desc: 'Sixteenth-note hi-hats, syncopated stabs and bass.' },
 };
 
+/** Starting-point chord progressions: { name, style, chart }. */
+export const PROGRESSIONS = [
+  { name: 'Jazz blues in F', style: 'swing', chart: 'F7 | Bb7 | F7 | Cm7 F7 | Bb7 | Bdim7 | F7 | D7alt | Gm7 | C7 | F7 D7 | Gm7 C7' },
+  { name: 'ii–V–I, major then minor', style: 'swing', chart: 'Dm7 | G7 | Cmaj7 | % | Dm7b5 | G7b9 | Cm6 | %' },
+  { name: 'Rhythm changes, A section', style: 'swing', chart: 'Bb6 G7 | Cm7 F7 | Dm7 G7 | Cm7 F7 | Fm7 Bb7 | Ebmaj7 Ab7 | Dm7 G7 | Cm7 F7' },
+  { name: 'Bossa in D minor', style: 'bossa', chart: 'Dm9 | % | Em7b5 | A7b9 | Dm9 | % | Gm9 | C9 | Fmaj7 | Bbmaj7 | Em7b5 | A7b9 | Dm9 | % | Em7b5 A7b9 | Dm9' },
+  { name: 'Jazz waltz in F', style: 'waltz', chart: 'Fmaj7 | Gm7 C7 | Am7 | D7b9 | Gm7 | C7 | Fmaj7 | Gm7 C7' },
+  { name: 'Ballad in E♭', style: 'ballad', chart: 'Ebmaj7 | Cm7 | Fm7 | Bb7sus4 Bb7 | Gm7 | C7 | Fm7 | Bb7' },
+  { name: 'Pop: I–V–vi–IV', style: 'pop', chart: 'C | G | Am | F | C | G | Am | F' },
+  { name: 'Funk vamp in E', style: 'funk', chart: 'E7#9 | % | % | % | A9 | % | E7#9 | %' },
+];
+
 // General MIDI drum notes (channel 10).
 export const GM_DRUMS = { kick: 36, rim: 37, snare: 38, hhc: 42, hhp: 44, hho: 46, crash: 49, ride: 51, shaker: 70 };
 const DRUM_VOICE = { hhc: 'hh', hho: 'hh', hhp: 'hh' };
